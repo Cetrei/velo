@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: velo-server
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${VELO_SIGNALING_PORT:-4001}:${VELO_SIGNALING_PORT:-4001}"
+    volumes:
+      # Mount config read-only so you can edit config/system.yml or config/user.yml
+      # on the host and restart the container without rebuilding the image.
+      - ./config:/app/config:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: velo-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    env_file:
+      - .env
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - server

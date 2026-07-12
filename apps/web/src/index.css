@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-velo-background: #12131C;
+  --color-velo-surface: #1E2030;
+  --color-velo-text-primary: #F3F4F6;
+  --color-velo-text-secondary: #9CA3AF;
+  --color-velo-indigo: #6366F1;
+  --color-velo-emerald: #10B981;
+  --color-velo-coral: #F87171;
+}
+
+body {
+  background-color: var(--color-velo-background);
+  color: var(--color-velo-text-primary);
+}

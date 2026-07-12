@@ -1,0 +1,5 @@
+[workspace]
+members = ["apps/desktop",
+    "crates/vcam-driver"
+]
+resolver = "2"

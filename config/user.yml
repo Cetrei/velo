@@ -1,0 +1,17 @@
+video:
+  resolution:
+    width: 1280
+    height: 720
+  target_fps: 30
+  max_bitrate_kbps: 2500
+  
+behavior:
+  launch_on_boot: false
+  minimize_to_tray: true
+  enable_reconnection_loop: true
+  reconnection_interval_ms: 1000
+
+android:
+  enable_foreground_service: true
+  wake_lock_level: "partial"
+  show_notification: true

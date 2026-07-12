@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Velo",
+  "version": "0.1.0",
+  "identifier": "com.cetrei.velo",
+  "build": {
+    "devUrl": "../web/dist",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Velo",
+        "width": 1024,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [],
+    "resources": ["resources/obs-virtualsource.dll"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerArgs": [],
+        "displayLanguageSelector": false,
+        "allowToChangeInstallationDirectory": true,
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
+  }
+}

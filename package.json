@@ -1,0 +1,23 @@
+{
+  "name": "velo",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "private": true,
+  "scripts": {
+    "dev:web": "bun --filter web dev",
+    "dev:server": "bun --filter server dev",
+    "dev:desktop": "tauri dev --config apps/desktop/tauri.conf.json",
+    "build:desktop": "tauri build --config apps/desktop/tauri.conf.json",
+    "build:desktop:release": "bun run build:desktop && bun scripts/collect-desktop-artifact.mjs",
+    "build:android:release": "cd apps/web/android && gradlew.bat assembleRelease && cd ../../.. && bun scripts/collect-android-artifact.mjs",
+    "build:docker": "docker compose up -d --build",
+    "dev": "bun run dev:server & bun run dev:web"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/server",
+    "packages/*"
+  ]
+}

@@ -1,0 +1,21 @@
+version: "1.0.0"
+network:
+  signaling_port: 4001
+  web_server_port: 4000
+  ice_servers:
+    - urls: "stun:stun.l.google.com:19302"
+    - urls: "stun:stun1.l.google.com:19302"
+    
+webrtc:
+  sdp_semantics: "unified-plan"
+  max_packet_size: 1200
+  rtp_timeout_ms: 5000
+
+driver:
+  windows_com_clsid: "{D35E4459-BE83-4923-9A96-4F1595180D82}"
+  device_friendly_name: "Velo Camera"
+  format: "NV12"
+
+logging:
+  level: "info"
+  format: "json"
