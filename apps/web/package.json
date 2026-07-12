@@ -7,13 +7,16 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "bun run build && wrangler pages deploy dist --project-name=velo-app"
+    "deploy": "bun run build && wrangler pages deploy dist --project-name=velo"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
-    "@capacitor/background-runner": "^3.0.0",
     "@capacitor/core": "^8.4.1",
+    "@capacitor-community/keep-awake": "^8.0.0",
+    "@capawesome-team/capacitor-android-foreground-service": "^8.0.0",
     "@tauri-apps/api": "^2.1.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
     "qrcode.react": "^4.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

@@ -5,6 +5,9 @@ export enum LogMessage {
   RoomJoined = 'room_joined',
   PairingKeyMismatch = 'pairing_key_mismatch',
   PeerDisconnected = 'peer_disconnected',
+  PairingCreated = 'pairing_created',
+  RoomFull = 'room_full',
+  RateLimitExceeded = 'rate_limit_exceeded',
 }
 
 const MESSAGES: Record<LogMessage, string> = {
@@ -12,8 +15,11 @@ const MESSAGES: Record<LogMessage, string> = {
   [LogMessage.ConfigReadFailed]: '[SIGNALING] Failed to read or parse system.yml',
   [LogMessage.InvalidEnvPort]: '[SIGNALING] Invalid VELO_SIGNALING_PORT env value: {value}',
   [LogMessage.RoomJoined]: '[SIGNALING] Peer {peerId} joined room {roomId}',
-  [LogMessage.PairingKeyMismatch]: '[SIGNALING] Pairing key mismatch for room {roomId}, dropping handshake',
+  [LogMessage.PairingKeyMismatch]: '[SIGNALING] Pairing key mismatch or expired OTP for room {roomId}, dropping handshake',
   [LogMessage.PeerDisconnected]: '[SIGNALING] Peer {peerId} disconnected from room {roomId}',
+  [LogMessage.PairingCreated]: '[SIGNALING] Pairing OTP created for room {roomId}',
+  [LogMessage.RoomFull]: '[SIGNALING] Rejected join for room {roomId}, already at peer capacity',
+  [LogMessage.RateLimitExceeded]: '[SIGNALING] Rate limit exceeded for {peerId} on {eventName}',
 };
 
 export function formatLog(message: LogMessage, params: Record<string, string | number> = {}): string {

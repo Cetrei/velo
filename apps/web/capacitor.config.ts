@@ -5,9 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Velo',
   webDir: 'dist',
   server: {
-    url: "https://velo-app.cetrei.dev",
-    cleartext: false
-  }
+    url: 'https://velo.cetrei.dev',
+    cleartext: false,
+  },
 };
 
 export default config;

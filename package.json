@@ -9,11 +9,26 @@
     "dev:web": "bun --filter web dev",
     "dev:server": "bun --filter server dev",
     "dev:desktop": "tauri dev --config apps/desktop/tauri.conf.json",
-    "build:desktop": "tauri build --config apps/desktop/tauri.conf.json",
-    "build:desktop:release": "bun run build:desktop && bun scripts/collect-desktop-artifact.mjs",
-    "build:android:release": "cd apps/web/android && gradlew.bat assembleRelease && cd ../../.. && bun scripts/collect-android-artifact.mjs",
-    "build:docker": "docker compose up -d --build",
-    "dev": "bun run dev:server & bun run dev:web"
+    "dev": "bun run dev:server && bun run dev:web",
+
+    "build:desktop:tauri": "tauri build --config apps/desktop/tauri.conf.json",
+
+    "build:desktop": "bun run build:desktop:tauri && bun scripts/collect-desktop-artifact.mjs",
+    "build:android": "bun scripts/run-gradle-task.ts assembleRelease && bun scripts/collect-android-artifact.mjs",
+    "build:server": "docker compose build --no-cache",
+    "build:all": "bun run build:desktop && bun run build:android && bun run build:server",
+
+    "deploy:web": "cd apps/web && bun run deploy",
+    "deploy:server": "docker compose up -d",
+    "deploy:all": "bun run deploy:web && bun run deploy:server",
+
+    "install:root": "bun install",
+    "install:server": "cd apps/server && bun install",
+    "install:web": "cd apps/web && bun install",
+    "install:rust": "cargo fetch --manifest-path apps/desktop/Cargo.toml && cargo fetch --manifest-path crates/vcam-driver/Cargo.toml",
+    "install:android": "cd apps/web && npx cap sync",
+    "install:docker": "docker compose build",
+    "install:all": "bun run install:root && bun run install:server && bun run install:web && bun run install:rust && bun run install:android && bun run install:docker"
   },
   "workspaces": [
     "apps/web",

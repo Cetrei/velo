@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package com.cetrei.velo;
 
 import static org.junit.Assert.*;
 

@@ -1,0 +1,14 @@
+def javaVersion = (project.findProperty("veloJavaVersion") ?: "21").toInteger()
+
+android {
+  compileOptions {
+      sourceCompatibility JavaVersion.toVersion(javaVersion)
+      targetCompatibility JavaVersion.toVersion(javaVersion)
+  }
+}
+
+apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
+
+if (hasProperty('postBuildExtras')) {
+  postBuildExtras()
+}

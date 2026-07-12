@@ -21,17 +21,38 @@ export function getSignalingUrl(): string {
   return `${protocol}//${window.location.hostname}:${DEFAULT_SIGNALING_PORT}`;
 }
 
-export function getRoomIdFromUrl(): string | null {
+export interface PairingFromUrl {
+  roomId: string;
+  otp: string;
+}
+
+export function getPairingFromUrl(): PairingFromUrl | null {
   const params = new URLSearchParams(window.location.search);
-  return params.get('room');
+  const roomId = params.get('room');
+  const otp = params.get('otp');
+  if (!roomId || !otp) {
+    return null;
+  }
+  return { roomId, otp };
 }
 
-export function generateRoomId(): string {
-  return crypto.randomUUID();
+interface CreatePairingResponse {
+  roomId: string;
+  otp: string;
+  expiresAt: number;
 }
 
-export function buildPairingUrl(baseUrl: string, roomId: string): string {
+export async function createPairing(signalingUrl: string): Promise<CreatePairingResponse> {
+  const response = await fetch(`${signalingUrl}/pairing/create`, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error('[WEB] Failed to create pairing session with signaling server');
+  }
+  return (await response.json()) as CreatePairingResponse;
+}
+
+export function buildPairingUrl(baseUrl: string, roomId: string, otp: string): string {
   const url = new URL(baseUrl);
   url.searchParams.set('room', roomId);
+  url.searchParams.set('otp', otp);
   return url.toString();
 }

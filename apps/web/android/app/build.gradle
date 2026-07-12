@@ -1,14 +1,51 @@
 apply plugin: 'com.android.application'
 
+import java.util.Properties
+
+def javaVersion = (project.findProperty("veloJavaVersion") ?: "21").toInteger()
+def androidHome = project.findProperty("veloAndroidHome") ?: "NO_ENCONTRADO"
+
+println ">>> [VELD] Java version from props: ${javaVersion}"
+println ">>> [VELD] ANDROID_HOME from props: ${androidHome}"
+
+// Local dev: apps/web/android/keystore.properties (gitignored, copy from keystore.properties.example).
+// CI: VELO_ANDROID_STORE_PASSWORD / VELO_ANDROID_KEY_ALIAS / VELO_ANDROID_KEY_PASSWORD env vars,
+// with the decoded keystore file placed at app/velo-upload.keystore before the build runs.
+def keystorePropsFile = file('keystore.properties')
+def veloSigningConfig = null
+if (keystorePropsFile.exists()) {
+    def props = new Properties()
+    keystorePropsFile.withInputStream { props.load(it) }
+    veloSigningConfig = [
+        storeFile: file(props.getProperty('storeFile')),
+        storePassword: props.getProperty('storePassword'),
+        keyAlias: props.getProperty('keyAlias'),
+        keyPassword: props.getProperty('keyPassword'),
+    ]
+} else if (System.getenv('VELO_ANDROID_STORE_PASSWORD')) {
+    veloSigningConfig = [
+        storeFile: file('velo-upload.keystore'),
+        storePassword: System.getenv('VELO_ANDROID_STORE_PASSWORD'),
+        keyAlias: System.getenv('VELO_ANDROID_KEY_ALIAS'),
+        keyPassword: System.getenv('VELO_ANDROID_KEY_PASSWORD'),
+    ]
+} else {
+    println ">>> [VELD] No keystore.properties and no VELO_ANDROID_STORE_PASSWORD env var found, release APKs will be unsigned"
+}
+
 android {
     namespace = "com.cetrei.velo"
     compileSdk = rootProject.ext.compileSdkVersion
+
     defaultConfig {
         applicationId "com.cetrei.velo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        buildConfigField "String", "ANDROID_HOME_PATH", "\"${androidHome.replace('\\', '/')}\""
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +53,34 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.toVersion(javaVersion)
+        targetCompatibility JavaVersion.toVersion(javaVersion)
+    }
+
+    if (veloSigningConfig != null) {
+        signingConfigs {
+            release {
+                storeFile veloSigningConfig.storeFile
+                storePassword veloSigningConfig.storePassword
+                keyAlias veloSigningConfig.keyAlias
+                keyPassword veloSigningConfig.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (veloSigningConfig != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

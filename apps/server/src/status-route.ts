@@ -1,8 +1,7 @@
 import type { Express } from 'express';
-import type { Server } from 'socket.io';
 import type { SystemConfig } from './config';
 
-function renderStatusPage(systemConfig: SystemConfig, connectedPeers: number): string {
+function renderStatusPage(systemConfig: SystemConfig): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -66,19 +65,16 @@ function renderStatusPage(systemConfig: SystemConfig, connectedPeers: number): s
   <h1>Velo Signaling Server</h1>
   <p class="status-line"><span class="status-dot"></span>Online</p>
   <dl>
-    <dt>Port</dt>
-    <dd>${systemConfig.network.signaling_port}</dd>
-    <dt>Connected peers</dt>
-    <dd>${connectedPeers}</dd>
+    <dt>Server version</dt>
+    <dd>${systemConfig.version}</dd>
   </dl>
 </main>
 </body>
 </html>`;
 }
 
-export function registerStatusRoute(app: Express, systemConfig: SystemConfig, io: Server): void {
+export function registerStatusRoute(app: Express, systemConfig: SystemConfig): void {
   app.get('/status', (_request, response) => {
-    const connectedPeers = io.sockets.sockets.size;
-    response.type('html').send(renderStatusPage(systemConfig, connectedPeers));
+    response.type('html').send(renderStatusPage(systemConfig));
   });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { SignalingPayload } from 'shared-types';
+import type { PairingPayload, SignalingPayload } from 'shared-types';
 import { createSignalingSocket, loadSystemConfig, loadUserConfig } from '../lib/signaling-client';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -8,6 +8,7 @@ export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnecte
 interface UseWebRtcOptions {
   signalingUrl: string;
   roomId: string;
+  otp: string;
   isInitiator: boolean;
   localStream?: MediaStream | null;
 }
@@ -61,7 +62,7 @@ async function handleIncomingSignal(peer: RTCPeerConnection, socket: Socket, roo
   }
 }
 
-export function useWebRtc({ signalingUrl, roomId, isInitiator, localStream }: UseWebRtcOptions) {
+export function useWebRtc({ signalingUrl, roomId, otp, isInitiator, localStream }: UseWebRtcOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -95,7 +96,8 @@ export function useWebRtc({ signalingUrl, roomId, isInitiator, localStream }: Us
 
       attachIceHandler(peer, socket, roomId);
       socket.on('signal', (payload: SignalingPayload) => handleIncomingSignal(peer, socket, roomId, payload));
-      socket.emit('join-room', roomId);
+      const pairingPayload: PairingPayload = { roomId, passkey: otp };
+      socket.emit('join-room', pairingPayload);
       setConnectionState('connecting');
 
       if (isInitiator) {
@@ -111,7 +113,7 @@ export function useWebRtc({ signalingUrl, roomId, isInitiator, localStream }: Us
       peerRef.current?.close();
       socketRef.current?.disconnect();
     };
-  }, [signalingUrl, roomId, isInitiator, localStream]);
+  }, [signalingUrl, roomId, otp, isInitiator, localStream]);
 
   return { connectionState, remoteStream, peer: peerRef.current, socket: socketRef.current };
 }

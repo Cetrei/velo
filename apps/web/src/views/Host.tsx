@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { KeepAwake } from '@capacitor-community/keep-awake';
+import { ForegroundService } from '@capawesome-team/capacitor-android-foreground-service';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { useWebRtc } from '../hooks/useWebRTC';
-import { getRoomIdFromUrl, getSignalingUrl } from '../lib/pairing';
+import { getPairingFromUrl, getSignalingUrl } from '../lib/pairing';
+
+const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
 
 function useWakeLock(): void {
   useEffect(() => {
@@ -11,23 +16,58 @@ function useWakeLock(): void {
     }).catch(() => {
       console.warn('[WEB] Wake lock request failed, screen may sleep during streaming');
     });
+
+    if (Capacitor.isNativePlatform()) {
+      KeepAwake.keepAwake().catch(() => {
+        console.warn('[WEB] Native keep-awake request failed');
+      });
+    }
+
     return () => {
       lock?.release();
+      if (Capacitor.isNativePlatform()) {
+        KeepAwake.allowSleep().catch(() => {});
+      }
     };
   }, []);
 }
 
+function useForegroundStreamingService(isStreaming: boolean): void {
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !isStreaming) {
+      return;
+    }
+
+    ForegroundService.startForegroundService({
+      id: FOREGROUND_SERVICE_NOTIFICATION_ID,
+      title: 'Velo',
+      body: 'Velo is streaming your camera',
+      smallIcon: 'ic_launcher',
+      silent: true,
+    }).catch(() => {
+      console.warn('[WEB] Failed to start foreground streaming service');
+    });
+
+    return () => {
+      ForegroundService.stopForegroundService().catch(() => {});
+    };
+  }, [isStreaming]);
+}
+
 export function Host() {
   const { stream, error } = useCameraStream();
-  const roomId = getRoomIdFromUrl();
+  const pairing = getPairingFromUrl();
   useWakeLock();
 
   const { connectionState } = useWebRtc({
     signalingUrl: getSignalingUrl(),
-    roomId: roomId ?? '',
+    roomId: pairing?.roomId ?? '',
+    otp: pairing?.otp ?? '',
     isInitiator: true,
     localStream: stream,
   });
+
+  useForegroundStreamingService(connectionState === 'connected');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
@@ -36,10 +76,10 @@ export function Host() {
     }
   }, [stream]);
 
-  if (!roomId) {
+  if (!pairing) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-coral">
-        <p>No pairing room found. Scan the QR code shown on the desktop app.</p>
+        <p>No pairing code found. Scan the QR code shown on the desktop app.</p>
       </main>
     );
   }

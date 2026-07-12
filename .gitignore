@@ -3,6 +3,8 @@ _deprecaated/
 .dev/
 docs/
 
+.vscode/
+
 SKILL.md
 TODO.md
 
@@ -34,6 +36,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.test.local
 .env.production.local
 .env.local
+
+# tauri updater signing keys, never commit private keys
+keys/
+*.key
 
 # caches
 .eslintcache
