@@ -62,23 +62,32 @@ function updateTauriConf(versionName: string): void {
   const eol = detectLineEnding(raw);
   const serialized = JSON.stringify(parsed, null, indent).replace(/\n/g, eol) + eol;
   writeFileSync(TAURI_CONF_PATH, serialized, 'utf-8');
-  console.log(`[SYNC-VERSION] ${TAURI_CONF_PATH} -> version: "${previousVersion}" to "${versionName}"`);
+  const changeNote = previousVersion === versionName ? '(already up to date)' : `"${previousVersion}" -> "${versionName}"`;
+  console.log(`[SYNC-VERSION] ${TAURI_CONF_PATH} -> version: ${changeNote}`);
 }
 
 function updateAndroidVariables(versionName: string, versionCode: number): void {
   const content = stripBom(readFileSync(ANDROID_VARIABLES_PATH, 'utf-8'));
-  const nameReplaced = content.replace(/veloVersionName\s*=\s*'[^']*'/, `veloVersionName = '${versionName}'`);
-  if (nameReplaced === content) {
-    const firstBytes = Buffer.from(content.slice(0, 120)).toString('hex');
+  const namePattern = /veloVersionName\s*=\s*['"][^'"]*['"]/;
+  const codePattern = /veloVersionCode\s*=\s*\d+/;
+
+  if (!namePattern.test(content)) {
     console.error(`[SYNC-VERSION] Could not find veloVersionName in ${ANDROID_VARIABLES_PATH}`);
-    console.error(`[SYNC-VERSION] First 120 chars as hex: ${firstBytes}`);
+    console.error(`[SYNC-VERSION] Full file content as read from disk:`);
+    console.error(content);
     process.exit(1);
   }
-  const updated = nameReplaced.replace(/veloVersionCode\s*=\s*\d+/, `veloVersionCode = ${versionCode}`);
-  if (updated === nameReplaced) {
+  if (!codePattern.test(content)) {
     console.error(`[SYNC-VERSION] Could not find veloVersionCode in ${ANDROID_VARIABLES_PATH}`);
+    console.error(`[SYNC-VERSION] Full file content as read from disk:`);
+    console.error(content);
     process.exit(1);
   }
+
+  const updated = content
+    .replace(namePattern, `veloVersionName = '${versionName}'`)
+    .replace(codePattern, `veloVersionCode = ${versionCode}`);
+
   writeFileSync(ANDROID_VARIABLES_PATH, updated, 'utf-8');
   console.log(`[SYNC-VERSION] ${ANDROID_VARIABLES_PATH} -> veloVersionName: '${versionName}', veloVersionCode: ${versionCode}`);
 }
