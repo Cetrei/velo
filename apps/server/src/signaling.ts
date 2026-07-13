@@ -54,7 +54,7 @@ function notifyExistingPeersOfJoin(socket: Socket, roomId: string, role: string)
 
 function handleJoinRoom(socket: Socket, payload: unknown): void {
   if (!isValidPairingPayload(payload)) {
-    console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId: 'unknown' }));
+    console.warn(formatLog(LogMessage.PairingPayloadInvalid, { peerId: socket.id }));
     return;
   }
 
@@ -73,7 +73,7 @@ function handleJoinRoom(socket: Socket, payload: unknown): void {
   socketRoomMap.set(socket.id, roomId);
   registerRoomJoin(roomId, socket.id, role);
   notifyExistingPeersOfJoin(socket, roomId, role);
-  console.log(formatLog(LogMessage.RoomJoined, { peerId: socket.id, roomId }));
+  console.log(formatLog(LogMessage.RoomJoined, { peerId: socket.id, roomId, role }));
 }
 
 function handleSignal(io: Server, socket: Socket, payload: unknown): void {
@@ -83,9 +83,16 @@ function handleSignal(io: Server, socket: Socket, payload: unknown): void {
 
   const room = io.sockets.adapter.rooms.get(payload.roomId);
   if (!room || !room.has(socket.id)) {
-    console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId: payload.roomId }));
+    console.warn(
+      formatLog(LogMessage.SignalRejectedNotInRoom, {
+        signalType: payload.type,
+        peerId: socket.id,
+        roomId: payload.roomId,
+      }),
+    );
     return;
   }
+  console.log(formatLog(LogMessage.SignalRelayed, { signalType: payload.type, peerId: socket.id, roomId: payload.roomId }));
   socket.to(payload.roomId).emit('signal', payload);
 }
 
