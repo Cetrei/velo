@@ -6,6 +6,7 @@ import { buildPairingUrl, createPairing, getSignalingUrl } from '../lib/pairing'
 import { SettingsPanel } from '../components/SettingsPanel';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
+import { DevStageLogPanel } from '../components/DevStageLogPanel';
 
 interface PairingState {
   roomId: string;
@@ -96,7 +97,7 @@ export function Viewer() {
     return buildPairingUrl(window.location.origin + '/host', pairing.roomId, pairing.otp);
   }, [pairing]);
 
-  const { connectionState, remoteStream, remotePeer, disconnect } = useWebRtc({
+  const { connectionState, stage, stageDetail, remoteStream, remotePeer, stageHistory, disconnect } = useWebRtc({
     signalingUrl,
     roomId: pairing?.roomId ?? '',
     otp: pairing?.otp ?? '',
@@ -140,6 +141,8 @@ export function Viewer() {
         {pairing && (
           <ConnectionStatusPanel
             connectionState={connectionState}
+            stage={stage}
+            stageDetail={stageDetail}
             remotePeer={remotePeer}
             onDisconnect={handleDisconnect}
           />
@@ -152,6 +155,7 @@ export function Viewer() {
         </button>
       </div>
       {showSettings && <SettingsPanel />}
+      <DevStageLogPanel stageHistory={stageHistory} />
       <UpdateBanner />
     </main>
   );

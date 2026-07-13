@@ -11,14 +11,16 @@ interface PendingPairing {
   expiresAt: number;
 }
 
-interface RoomPeerInfo {
+export interface RoomPeerRecord {
+  socketId: string;
+  sessionId: string;
   role: string;
   deviceName: string;
 }
 
 const pendingPairings = new Map<string, PendingPairing>();
-const roomPeerCounts = new Map<string, number>();
-const roomPeerRoles = new Map<string, Map<string, RoomPeerInfo>>();
+const roomPeersBySession = new Map<string, Map<string, RoomPeerRecord>>();
+const socketToSession = new Map<string, string>();
 
 function generateOtp(): string {
   const min = 10 ** (OTP_LENGTH - 1);
@@ -55,61 +57,121 @@ export function findRoomIdByOtp(otp: string): string | null {
   return null;
 }
 
-export function consumePairing(roomId: string, otp: string): boolean {
+export type JoinOutcome =
+  | { kind: 'joined_fresh' }
+  | { kind: 'resynced' }
+  | { kind: 'rejected'; reason: 'otp_invalid' | 'otp_expired' | 'room_full' };
+
+function getExistingSessionRecord(roomId: string, sessionId: string): RoomPeerRecord | null {
+  return roomPeersBySession.get(roomId)?.get(sessionId) ?? null;
+}
+
+function countPeersExcluding(roomId: string, sessionId: string): number {
+  const peersInRoom = roomPeersBySession.get(roomId);
+  if (!peersInRoom) {
+    return 0;
+  }
+  return Array.from(peersInRoom.keys()).filter((existingSessionId) => existingSessionId !== sessionId).length;
+}
+
+export function evaluateJoin(roomId: string, otp: string, sessionId: string): JoinOutcome {
+  const existingRecord = getExistingSessionRecord(roomId, sessionId);
+  if (existingRecord) {
+    return { kind: 'resynced' };
+  }
+
   pruneExpiredPairings();
   const pairing = pendingPairings.get(roomId);
-  if (!pairing || pairing.otp !== otp) {
+  if (!pairing) {
     console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId }));
-    return false;
+    return { kind: 'rejected', reason: 'otp_expired' };
   }
-  const currentPeerCount = roomPeerCounts.get(roomId) ?? 0;
-  if (currentPeerCount + 1 >= MAX_PEERS_PER_ROOM) {
+  if (pairing.otp !== otp) {
+    console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId }));
+    return { kind: 'rejected', reason: 'otp_invalid' };
+  }
+
+  const otherPeerCount = countPeersExcluding(roomId, sessionId);
+  if (otherPeerCount + 1 > MAX_PEERS_PER_ROOM) {
+    return { kind: 'rejected', reason: 'room_full' };
+  }
+
+  return { kind: 'joined_fresh' };
+}
+
+export function registerRoomJoin(
+  roomId: string,
+  socketId: string,
+  sessionId: string,
+  role: string,
+  deviceName: string,
+): void {
+  const peersInRoom = roomPeersBySession.get(roomId) ?? new Map<string, RoomPeerRecord>();
+  peersInRoom.set(sessionId, { socketId, sessionId, role, deviceName });
+  roomPeersBySession.set(roomId, peersInRoom);
+  socketToSession.set(socketId, sessionId);
+
+  const otherPeerCount = countPeersExcluding(roomId, sessionId);
+  if (otherPeerCount + 1 >= MAX_PEERS_PER_ROOM) {
     pendingPairings.delete(roomId);
   }
-  return true;
 }
 
-export function canJoinRoom(roomId: string): boolean {
-  const currentCount = roomPeerCounts.get(roomId) ?? 0;
-  return currentCount < MAX_PEERS_PER_ROOM;
-}
-
-export function registerRoomJoin(roomId: string, peerId: string, role: string, deviceName: string): void {
-  const currentCount = roomPeerCounts.get(roomId) ?? 0;
-  roomPeerCounts.set(roomId, currentCount + 1);
-
-  const rolesInRoom = roomPeerRoles.get(roomId) ?? new Map<string, RoomPeerInfo>();
-  rolesInRoom.set(peerId, { role, deviceName });
-  roomPeerRoles.set(roomId, rolesInRoom);
-}
-
-export function registerRoomLeave(roomId: string, peerId: string): void {
-  const currentCount = roomPeerCounts.get(roomId) ?? 0;
-  if (currentCount <= 1) {
-    roomPeerCounts.delete(roomId);
-    roomPeerRoles.delete(roomId);
+export function reattachSocketToSession(roomId: string, socketId: string, sessionId: string): void {
+  const record = getExistingSessionRecord(roomId, sessionId);
+  if (!record) {
     return;
   }
-  roomPeerCounts.set(roomId, currentCount - 1);
-
-  const rolesInRoom = roomPeerRoles.get(roomId);
-  rolesInRoom?.delete(peerId);
+  record.socketId = socketId;
+  socketToSession.set(socketId, sessionId);
 }
 
-export function getPeerRole(roomId: string, peerId: string): string | null {
-  return roomPeerRoles.get(roomId)?.get(peerId)?.role ?? null;
+export function registerRoomLeave(roomId: string, sessionId: string): void {
+  socketToSession.forEach((existingSessionId, socketId) => {
+    if (existingSessionId === sessionId) {
+      socketToSession.delete(socketId);
+    }
+  });
+
+  const peersInRoom = roomPeersBySession.get(roomId);
+  if (!peersInRoom) {
+    return;
+  }
+  peersInRoom.delete(sessionId);
+  if (peersInRoom.size === 0) {
+    roomPeersBySession.delete(roomId);
+  }
 }
 
-export function getPeerDeviceName(roomId: string, peerId: string): string | null {
-  return roomPeerRoles.get(roomId)?.get(peerId)?.deviceName ?? null;
+export function getSessionIdForSocket(socketId: string): string | null {
+  return socketToSession.get(socketId) ?? null;
 }
 
-export function getOtherPeersInRoom(roomId: string, peerId: string): Array<{ peerId: string; role: string; deviceName: string }> {
-  const rolesInRoom = roomPeerRoles.get(roomId);
-  if (!rolesInRoom) {
+export function getRoomIdForSession(sessionId: string): string | null {
+  for (const [roomId, peersInRoom] of roomPeersBySession) {
+    if (peersInRoom.has(sessionId)) {
+      return roomId;
+    }
+  }
+  return null;
+}
+
+export function getPeerRecord(roomId: string, sessionId: string): RoomPeerRecord | null {
+  return getExistingSessionRecord(roomId, sessionId);
+}
+
+export function getOtherPeersInRoom(roomId: string, sessionId: string): RoomPeerRecord[] {
+  const peersInRoom = roomPeersBySession.get(roomId);
+  if (!peersInRoom) {
     return [];
   }
-  return Array.from(rolesInRoom.entries())
-    .filter(([otherPeerId]) => otherPeerId !== peerId)
-    .map(([otherPeerId, info]) => ({ peerId: otherPeerId, role: info.role, deviceName: info.deviceName }));
+  return Array.from(peersInRoom.values()).filter((peer) => peer.sessionId !== sessionId);
+}
+
+export function getAllPeersInRoom(roomId: string): RoomPeerRecord[] {
+  const peersInRoom = roomPeersBySession.get(roomId);
+  if (!peersInRoom) {
+    return [];
+  }
+  return Array.from(peersInRoom.values());
 }
