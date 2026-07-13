@@ -13,6 +13,19 @@ async function scanForPairing(): Promise<PairingFromUrl | null> {
   return getPairingFromUrlString(result.ScanResult);
 }
 
+function describeScanError(scanError: unknown): string {
+  const rawMessage = scanError instanceof Error ? scanError.message : String(scanError);
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (normalizedMessage.includes('cancel')) {
+    return 'Scan cancelled';
+  }
+  if (normalizedMessage.includes('permission') || normalizedMessage.includes('camera access')) {
+    return 'Camera permission is off for Velo. Enable it in your phone settings and try again.';
+  }
+  return 'Could not scan the QR code, try again or type the code shown on the computer';
+}
+
 export function QrScannerButton({ onScanned }: QrScannerButtonProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +41,9 @@ export function QrScannerButton({ onScanned }: QrScannerButtonProps) {
         }
         onScanned(pairing);
       })
-      .catch(() => {
-        setError('Could not open the camera to scan');
+      .catch((scanError) => {
+        console.error('[WEB] QR scan failed', scanError);
+        setError(describeScanError(scanError));
       })
       .finally(() => {
         setIsScanning(false);

@@ -12,12 +12,14 @@ export interface PairingPayload {
   roomId: string;
   passkey: string;
   role: PeerRole;
+  deviceName?: string;
 }
 
 export interface PeerPresencePayload {
   roomId: string;
   peerId: string;
   role: PeerRole;
+  deviceName?: string;
 }
 
 export interface DisconnectPayload {

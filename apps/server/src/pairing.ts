@@ -11,9 +11,14 @@ interface PendingPairing {
   expiresAt: number;
 }
 
+interface RoomPeerInfo {
+  role: string;
+  deviceName: string;
+}
+
 const pendingPairings = new Map<string, PendingPairing>();
 const roomPeerCounts = new Map<string, number>();
-const roomPeerRoles = new Map<string, Map<string, string>>();
+const roomPeerRoles = new Map<string, Map<string, RoomPeerInfo>>();
 
 function generateOtp(): string {
   const min = 10 ** (OTP_LENGTH - 1);
@@ -69,12 +74,12 @@ export function canJoinRoom(roomId: string): boolean {
   return currentCount < MAX_PEERS_PER_ROOM;
 }
 
-export function registerRoomJoin(roomId: string, peerId: string, role: string): void {
+export function registerRoomJoin(roomId: string, peerId: string, role: string, deviceName: string): void {
   const currentCount = roomPeerCounts.get(roomId) ?? 0;
   roomPeerCounts.set(roomId, currentCount + 1);
 
-  const rolesInRoom = roomPeerRoles.get(roomId) ?? new Map<string, string>();
-  rolesInRoom.set(peerId, role);
+  const rolesInRoom = roomPeerRoles.get(roomId) ?? new Map<string, RoomPeerInfo>();
+  rolesInRoom.set(peerId, { role, deviceName });
   roomPeerRoles.set(roomId, rolesInRoom);
 }
 
@@ -92,15 +97,19 @@ export function registerRoomLeave(roomId: string, peerId: string): void {
 }
 
 export function getPeerRole(roomId: string, peerId: string): string | null {
-  return roomPeerRoles.get(roomId)?.get(peerId) ?? null;
+  return roomPeerRoles.get(roomId)?.get(peerId)?.role ?? null;
 }
 
-export function getOtherPeersInRoom(roomId: string, peerId: string): Array<{ peerId: string; role: string }> {
+export function getPeerDeviceName(roomId: string, peerId: string): string | null {
+  return roomPeerRoles.get(roomId)?.get(peerId)?.deviceName ?? null;
+}
+
+export function getOtherPeersInRoom(roomId: string, peerId: string): Array<{ peerId: string; role: string; deviceName: string }> {
   const rolesInRoom = roomPeerRoles.get(roomId);
   if (!rolesInRoom) {
     return [];
   }
   return Array.from(rolesInRoom.entries())
     .filter(([otherPeerId]) => otherPeerId !== peerId)
-    .map(([otherPeerId, role]) => ({ peerId: otherPeerId, role }));
+    .map(([otherPeerId, info]) => ({ peerId: otherPeerId, role: info.role, deviceName: info.deviceName }));
 }

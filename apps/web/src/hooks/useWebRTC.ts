@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { PairingPayload, PeerPresencePayload, PeerRole, SignalingPayload } from 'shared-types';
 import { createSignalingSocket, loadSystemConfig, loadUserConfig } from '../lib/signaling-client';
+import { getDeviceName } from '../lib/device-identity';
 
 export type WebRtcStage =
   | 'idle'
@@ -224,7 +225,7 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
       });
 
       setStageIfActive('joiningRoom');
-      const pairingPayload: PairingPayload = { roomId, passkey: otp, role };
+      const pairingPayload: PairingPayload = { roomId, passkey: otp, role, deviceName: getDeviceName() };
       socket.emit('join-room', pairingPayload);
 
       setStageIfActive('waitingForPeer');
@@ -235,10 +236,14 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
       }, WAITING_FOR_PEER_TIMEOUT_MS);
     }
 
-    connect();
+    const startupTimer = setTimeout(() => {
+      if (isCancelled) return;
+      connect();
+    }, 0);
 
     return () => {
       isCancelled = true;
+      clearTimeout(startupTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearWaitingForPeerTimer();
       peerRef.current?.close();
