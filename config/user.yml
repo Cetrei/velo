@@ -10,6 +10,7 @@ behavior:
   minimize_to_tray: true
   enable_reconnection_loop: true
   reconnection_interval_ms: 1000
+  dev_mode_enabled: false
 
 android:
   enable_foreground_service: true

@@ -37,6 +37,7 @@ export interface UserConfig {
     minimize_to_tray: boolean;
     enable_reconnection_loop: boolean;
     reconnection_interval_ms: number;
+    dev_mode_enabled: boolean;
   };
   android: {
     enable_foreground_service: boolean;
@@ -126,6 +127,7 @@ function validateBehavior(behavior: unknown): asserts behavior is UserConfig['be
   assertField(typeof record.minimize_to_tray === 'boolean', 'behavior.minimize_to_tray');
   assertField(typeof record.enable_reconnection_loop === 'boolean', 'behavior.enable_reconnection_loop');
   assertField(typeof record.reconnection_interval_ms === 'number', 'behavior.reconnection_interval_ms');
+  assertField(typeof record.dev_mode_enabled === 'boolean', 'behavior.dev_mode_enabled');
 }
 
 function validateAndroid(android: unknown): asserts android is UserConfig['android'] {

@@ -40,6 +40,16 @@ export function SettingsPanel() {
           }
         />
       </label>
+      <label className="flex items-center justify-between text-sm text-velo-text-secondary">
+        Developer diagnostics
+        <input
+          type="checkbox"
+          checked={config.behavior.dev_mode_enabled}
+          onChange={(event) =>
+            saveConfig({ ...config, behavior: { ...config.behavior, dev_mode_enabled: event.target.checked } })
+          }
+        />
+      </label>
     </div>
   );
 }

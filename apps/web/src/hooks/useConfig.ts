@@ -1,24 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import type { UserConfig } from 'shared-types';
 
-export interface UserConfig {
-  video: {
-    resolution: { width: number; height: number };
-    target_fps: number;
-    max_bitrate_kbps: number;
-  };
-  behavior: {
-    launch_on_boot: boolean;
-    minimize_to_tray: boolean;
-    enable_reconnection_loop: boolean;
-    reconnection_interval_ms: number;
-  };
-  android: {
-    enable_foreground_service: boolean;
-    wake_lock_level: string;
-    show_notification: boolean;
-  };
-}
+export type { UserConfig };
 
 export function useConfig() {
   const [config, setConfig] = useState<UserConfig | null>(null);
