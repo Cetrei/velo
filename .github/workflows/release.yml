@@ -26,6 +26,7 @@ jobs:
         run: bun install
 
       - name: Sync version from tag
+        shell: cmd
         run: bun run sync:version ${{ github.ref_name }}
 
       - name: Build web frontend
@@ -66,6 +67,7 @@ jobs:
         run: bun install
 
       - name: Sync version from tag
+        shell: bash
         run: bun run sync:version ${{ github.ref_name }}
 
       - name: Decode Android signing keystore

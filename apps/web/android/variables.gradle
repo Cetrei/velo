@@ -2,8 +2,8 @@ ext {
     // Overwritten by scripts/sync-version.ts on every release build (reads the pushed git tag).
     // Defaults here are only used for local `bun run dev:web` / ad-hoc Android Studio builds
     // where sync-version.ts was never run.
-    veloVersionName = '0.1.0'
-    veloVersionCode = 1
+    veloVersionName = '9.9.9'
+    veloVersionCode = 9009009
 
     minSdkVersion = 26
     compileSdkVersion = 36
