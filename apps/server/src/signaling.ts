@@ -1,7 +1,13 @@
 import type { Server, Socket } from 'socket.io';
-import type { SignalingPayload, PairingPayload } from 'shared-types';
+import type { SignalingPayload, PairingPayload, PeerPresencePayload, DisconnectPayload } from 'shared-types';
 import { formatLog, LogMessage } from './log-messages';
-import { canJoinRoom, consumePairing, registerRoomJoin, registerRoomLeave } from './pairing';
+import {
+  canJoinRoom,
+  consumePairing,
+  getOtherPeersInRoom,
+  registerRoomJoin,
+  registerRoomLeave,
+} from './pairing';
 
 const socketRoomMap = new Map<string, string>();
 
@@ -10,7 +16,16 @@ function isValidPairingPayload(payload: unknown): payload is PairingPayload {
     return false;
   }
   const candidate = payload as Record<string, unknown>;
-  return typeof candidate.roomId === 'string' && typeof candidate.passkey === 'string';
+  const hasValidRole = candidate.role === 'host' || candidate.role === 'viewer';
+  return typeof candidate.roomId === 'string' && typeof candidate.passkey === 'string' && hasValidRole;
+}
+
+function isValidDisconnectPayload(payload: unknown): payload is DisconnectPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  return typeof candidate.roomId === 'string';
 }
 
 function isValidSignalingPayload(payload: unknown): payload is SignalingPayload {
@@ -22,13 +37,28 @@ function isValidSignalingPayload(payload: unknown): payload is SignalingPayload 
   return typeof candidate.roomId === 'string' && hasValidType && typeof candidate.data === 'object';
 }
 
+function notifyExistingPeersOfJoin(socket: Socket, roomId: string, role: string): void {
+  const presence: PeerPresencePayload = { roomId, peerId: socket.id, role: role as PeerPresencePayload['role'] };
+  socket.to(roomId).emit('peer-joined', presence);
+
+  const otherPeers = getOtherPeersInRoom(roomId, socket.id);
+  otherPeers.forEach((peer) => {
+    const existingPresence: PeerPresencePayload = {
+      roomId,
+      peerId: peer.peerId,
+      role: peer.role as PeerPresencePayload['role'],
+    };
+    socket.emit('peer-joined', existingPresence);
+  });
+}
+
 function handleJoinRoom(socket: Socket, payload: unknown): void {
   if (!isValidPairingPayload(payload)) {
     console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId: 'unknown' }));
     return;
   }
 
-  const { roomId, passkey } = payload;
+  const { roomId, passkey, role } = payload;
 
   if (!consumePairing(roomId, passkey)) {
     return;
@@ -41,7 +71,8 @@ function handleJoinRoom(socket: Socket, payload: unknown): void {
 
   socket.join(roomId);
   socketRoomMap.set(socket.id, roomId);
-  registerRoomJoin(roomId);
+  registerRoomJoin(roomId, socket.id, role);
+  notifyExistingPeersOfJoin(socket, roomId, role);
   console.log(formatLog(LogMessage.RoomJoined, { peerId: socket.id, roomId }));
 }
 
@@ -58,17 +89,43 @@ function handleSignal(io: Server, socket: Socket, payload: unknown): void {
   socket.to(payload.roomId).emit('signal', payload);
 }
 
+function notifyRoomOfLeave(socket: Socket, roomId: string): void {
+  const presence: Pick<PeerPresencePayload, 'roomId' | 'peerId'> = { roomId, peerId: socket.id };
+  socket.to(roomId).emit('peer-left', presence);
+}
+
 function handleDisconnect(socket: Socket): void {
   const roomId = socketRoomMap.get(socket.id);
   socketRoomMap.delete(socket.id);
   if (roomId) {
-    registerRoomLeave(roomId);
+    registerRoomLeave(roomId, socket.id);
+    notifyRoomOfLeave(socket, roomId);
   }
   console.log(formatLog(LogMessage.PeerDisconnected, { peerId: socket.id, roomId: roomId ?? 'unknown' }));
+}
+
+function handleDisconnectPeer(socket: Socket, payload: unknown): void {
+  if (!isValidDisconnectPayload(payload)) {
+    return;
+  }
+
+  const { roomId } = payload;
+  const ownedRoomId = socketRoomMap.get(socket.id);
+  if (ownedRoomId !== roomId) {
+    return;
+  }
+
+  notifyRoomOfLeave(socket, roomId);
+  socket.to(roomId).emit('peer-disconnected-by-remote', { roomId });
+  socket.leave(roomId);
+  socketRoomMap.delete(socket.id);
+  registerRoomLeave(roomId, socket.id);
+  console.log(formatLog(LogMessage.PeerDisconnected, { peerId: socket.id, roomId }));
 }
 
 export function registerSignalingHandlers(io: Server, socket: Socket): void {
   socket.on('join-room', (payload: unknown) => handleJoinRoom(socket, payload));
   socket.on('signal', (payload: unknown) => handleSignal(io, socket, payload));
+  socket.on('disconnect-peer', (payload: unknown) => handleDisconnectPeer(socket, payload));
   socket.on('disconnect', () => handleDisconnect(socket));
 }

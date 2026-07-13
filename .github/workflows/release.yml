@@ -25,6 +25,9 @@ jobs:
       - name: Install root dependencies
         run: bun install
 
+      - name: Sync version from tag
+        run: bun run sync:version ${{ github.ref_name }}
+
       - name: Build web frontend
         working-directory: apps/web
         run: bun install && bun run build
@@ -44,6 +47,8 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    env:
+      VELO_ANDROID_KEYSTORE_BASE64: ${{ secrets.VELO_ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,9 +65,12 @@ jobs:
       - name: Install root dependencies
         run: bun install
 
+      - name: Sync version from tag
+        run: bun run sync:version ${{ github.ref_name }}
+
       - name: Decode Android signing keystore
-        if: ${{ secrets.VELO_ANDROID_KEYSTORE_BASE64 != '' }}
-        run: echo "${{ secrets.VELO_ANDROID_KEYSTORE_BASE64 }}" | base64 -d > apps/web/android/app/velo-upload.keystore
+        if: ${{ env.VELO_ANDROID_KEYSTORE_BASE64 != '' }}
+        run: echo "$VELO_ANDROID_KEYSTORE_BASE64" | base64 -d > apps/web/android/app/velo-upload.keystore
 
       - name: Build Android release APK
         env:

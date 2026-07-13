@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { PairingPayload, SignalingPayload } from 'shared-types';
+import type { PairingPayload, PeerPresencePayload, PeerRole, SignalingPayload } from 'shared-types';
 import { createSignalingSocket, loadSystemConfig, loadUserConfig } from '../lib/signaling-client';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -9,8 +9,14 @@ interface UseWebRtcOptions {
   signalingUrl: string;
   roomId: string;
   otp: string;
+  role: PeerRole;
   isInitiator: boolean;
   localStream?: MediaStream | null;
+}
+
+export interface RemotePeerInfo {
+  peerId: string;
+  role: PeerRole;
 }
 
 function createPeerConnection(iceServers: RTCIceServer[]): RTCPeerConnection {
@@ -62,9 +68,29 @@ async function handleIncomingSignal(peer: RTCPeerConnection, socket: Socket, roo
   }
 }
 
-export function useWebRtc({ signalingUrl, roomId, otp, isInitiator, localStream }: UseWebRtcOptions) {
+function attachPresenceHandlers(
+  socket: Socket,
+  roomId: string,
+  setRemotePeer: (peer: RemotePeerInfo | null) => void,
+): void {
+  socket.on('peer-joined', (payload: PeerPresencePayload) => {
+    if (payload.roomId !== roomId) return;
+    setRemotePeer({ peerId: payload.peerId, role: payload.role });
+  });
+  socket.on('peer-left', (payload: { roomId: string; peerId: string }) => {
+    if (payload.roomId !== roomId) return;
+    setRemotePeer(null);
+  });
+  socket.on('peer-disconnected-by-remote', (payload: { roomId: string }) => {
+    if (payload.roomId !== roomId) return;
+    setRemotePeer(null);
+  });
+}
+
+export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localStream }: UseWebRtcOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [remotePeer, setRemotePeer] = useState<RemotePeerInfo | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
@@ -95,8 +121,9 @@ export function useWebRtc({ signalingUrl, roomId, otp, isInitiator, localStream 
       };
 
       attachIceHandler(peer, socket, roomId);
+      attachPresenceHandlers(socket, roomId, setRemotePeer);
       socket.on('signal', (payload: SignalingPayload) => handleIncomingSignal(peer, socket, roomId, payload));
-      const pairingPayload: PairingPayload = { roomId, passkey: otp };
+      const pairingPayload: PairingPayload = { roomId, passkey: otp, role };
       socket.emit('join-room', pairingPayload);
       setConnectionState('connecting');
 
@@ -113,7 +140,23 @@ export function useWebRtc({ signalingUrl, roomId, otp, isInitiator, localStream 
       peerRef.current?.close();
       socketRef.current?.disconnect();
     };
-  }, [signalingUrl, roomId, otp, isInitiator, localStream]);
+  }, [signalingUrl, roomId, otp, role, isInitiator, localStream]);
 
-  return { connectionState, remoteStream, peer: peerRef.current, socket: socketRef.current };
+  const disconnect = useCallback(() => {
+    socketRef.current?.emit('disconnect-peer', { roomId });
+    peerRef.current?.close();
+    socketRef.current?.disconnect();
+    setConnectionState('disconnected');
+    setRemoteStream(null);
+    setRemotePeer(null);
+  }, [roomId]);
+
+  return {
+    connectionState,
+    remoteStream,
+    remotePeer,
+    disconnect,
+    peer: peerRef.current,
+    socket: socketRef.current,
+  };
 }

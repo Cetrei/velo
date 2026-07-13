@@ -17,6 +17,16 @@
     "build:android": "bun scripts/run-gradle-task.ts assembleRelease && bun scripts/collect-android-artifact.mjs",
     "build:server": "docker compose build --no-cache",
     "build:all": "bun run build:desktop && bun run build:android && bun run build:server",
+    "sync:version": "bun scripts/sync-version.ts",
+
+    "typecheck:shared": "cd packages/shared && bun run typecheck",
+    "typecheck:server": "cd apps/server && bun run typecheck",
+    "typecheck:web": "cd apps/web && bun run typecheck",
+    "typecheck:all": "bun run typecheck:shared && bun run typecheck:server && bun run typecheck:web",
+    "check:rust": "cargo check --manifest-path apps/desktop/Cargo.toml && cargo check --manifest-path crates/vcam-driver/Cargo.toml",
+
+    "verify:release": "bun run install:all && bun run typecheck:all && bun run check:rust",
+    "release": "bun run verify:release && bun scripts/release.ts",
 
     "deploy:web": "cd apps/web && bun run deploy",
     "deploy:server": "docker compose up -d",

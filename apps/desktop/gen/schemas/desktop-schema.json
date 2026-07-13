@@ -177,6 +177,42 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`"
+        },
+        {
+          "description": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window.",
+          "type": "string",
+          "const": "allow-close-splashscreen",
+          "markdownDescription": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window."
+        },
+        {
+          "description": "Allows reading the bundled read-only system.yml config.",
+          "type": "string",
+          "const": "allow-get-system-config",
+          "markdownDescription": "Allows reading the bundled read-only system.yml config."
+        },
+        {
+          "description": "Allows reading the user's writable user.yml config.",
+          "type": "string",
+          "const": "allow-get-user-config",
+          "markdownDescription": "Allows reading the user's writable user.yml config."
+        },
+        {
+          "description": "Allows pushing a decoded WebRTC video frame into the virtual camera driver.",
+          "type": "string",
+          "const": "allow-push-frame",
+          "markdownDescription": "Allows pushing a decoded WebRTC video frame into the virtual camera driver."
+        },
+        {
+          "description": "Allows writing the user's writable user.yml config.",
+          "type": "string",
+          "const": "allow-save-user-config",
+          "markdownDescription": "Allows writing the user's writable user.yml config."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

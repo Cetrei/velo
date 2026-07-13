@@ -1,10 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { ForegroundService } from '@capawesome-team/capacitor-android-foreground-service';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { useWebRtc } from '../hooks/useWebRTC';
-import { getPairingFromUrl, getSignalingUrl } from '../lib/pairing';
+import { useDeepLinkPairing } from '../hooks/useDeepLinkPairing';
+import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
+import { PairingCodeEntry } from '../components/PairingCodeEntry';
+import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
 
@@ -54,15 +57,15 @@ function useForegroundStreamingService(isStreaming: boolean): void {
   }, [isStreaming]);
 }
 
-export function Host() {
+export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; onExit: () => void }) {
   const { stream, error } = useCameraStream();
-  const pairing = getPairingFromUrl();
   useWakeLock();
 
-  const { connectionState } = useWebRtc({
+  const { connectionState, remotePeer, disconnect } = useWebRtc({
     signalingUrl: getSignalingUrl(),
-    roomId: pairing?.roomId ?? '',
-    otp: pairing?.otp ?? '',
+    roomId: pairing.roomId,
+    otp: pairing.otp,
+    role: 'host',
     isInitiator: true,
     localStream: stream,
   });
@@ -76,13 +79,10 @@ export function Host() {
     }
   }, [stream]);
 
-  if (!pairing) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-coral">
-        <p>No pairing code found. Scan the QR code shown on the desktop app.</p>
-      </main>
-    );
-  }
+  const handleDisconnect = useCallback(() => {
+    disconnect();
+    onExit();
+  }, [disconnect, onExit]);
 
   if (error) {
     return (
@@ -95,7 +95,28 @@ export function Host() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-velo-background text-velo-text-primary">
       <video ref={videoRef} autoPlay playsInline muted className="w-full max-w-sm rounded-2xl" />
-      <span className="text-sm text-velo-text-secondary">{connectionState}</span>
+      <ConnectionStatusPanel
+        connectionState={connectionState}
+        remotePeer={remotePeer}
+        onDisconnect={handleDisconnect}
+      />
     </main>
   );
+}
+
+export function Host() {
+  const { pairing: deepLinkPairing, reset: resetDeepLinkPairing } = useDeepLinkPairing();
+  const [manualPairing, setManualPairing] = useState<PairingFromUrl | null>(null);
+  const pairing = deepLinkPairing ?? manualPairing;
+
+  const handleExit = useCallback(() => {
+    resetDeepLinkPairing();
+    setManualPairing(null);
+  }, [resetDeepLinkPairing]);
+
+  if (!pairing) {
+    return <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setManualPairing} />;
+  }
+
+  return <StreamingView pairing={pairing} onExit={handleExit} />;
 }

@@ -13,6 +13,7 @@ interface PendingPairing {
 
 const pendingPairings = new Map<string, PendingPairing>();
 const roomPeerCounts = new Map<string, number>();
+const roomPeerRoles = new Map<string, Map<string, string>>();
 
 function generateOtp(): string {
   const min = 10 ** (OTP_LENGTH - 1);
@@ -39,6 +40,16 @@ export function createPairing(): PendingPairing {
   return pairing;
 }
 
+export function findRoomIdByOtp(otp: string): string | null {
+  pruneExpiredPairings();
+  for (const pairing of pendingPairings.values()) {
+    if (pairing.otp === otp) {
+      return pairing.roomId;
+    }
+  }
+  return null;
+}
+
 export function consumePairing(roomId: string, otp: string): boolean {
   pruneExpiredPairings();
   const pairing = pendingPairings.get(roomId);
@@ -55,16 +66,38 @@ export function canJoinRoom(roomId: string): boolean {
   return currentCount < MAX_PEERS_PER_ROOM;
 }
 
-export function registerRoomJoin(roomId: string): void {
+export function registerRoomJoin(roomId: string, peerId: string, role: string): void {
   const currentCount = roomPeerCounts.get(roomId) ?? 0;
   roomPeerCounts.set(roomId, currentCount + 1);
+
+  const rolesInRoom = roomPeerRoles.get(roomId) ?? new Map<string, string>();
+  rolesInRoom.set(peerId, role);
+  roomPeerRoles.set(roomId, rolesInRoom);
 }
 
-export function registerRoomLeave(roomId: string): void {
+export function registerRoomLeave(roomId: string, peerId: string): void {
   const currentCount = roomPeerCounts.get(roomId) ?? 0;
   if (currentCount <= 1) {
     roomPeerCounts.delete(roomId);
+    roomPeerRoles.delete(roomId);
     return;
   }
   roomPeerCounts.set(roomId, currentCount - 1);
+
+  const rolesInRoom = roomPeerRoles.get(roomId);
+  rolesInRoom?.delete(peerId);
+}
+
+export function getPeerRole(roomId: string, peerId: string): string | null {
+  return roomPeerRoles.get(roomId)?.get(peerId) ?? null;
+}
+
+export function getOtherPeersInRoom(roomId: string, peerId: string): Array<{ peerId: string; role: string }> {
+  const rolesInRoom = roomPeerRoles.get(roomId);
+  if (!rolesInRoom) {
+    return [];
+  }
+  return Array.from(rolesInRoom.entries())
+    .filter(([otherPeerId]) => otherPeerId !== peerId)
+    .map(([otherPeerId, role]) => ({ peerId: otherPeerId, role }));
 }

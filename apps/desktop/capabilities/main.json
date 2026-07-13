@@ -8,5 +8,14 @@
   "remote": {
     "urls": ["https://*.cetrei.dev"]
   },
-  "permissions": ["core:default", "updater:default", "process:default"]
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:default",
+    "allow-push-frame",
+    "allow-get-system-config",
+    "allow-get-user-config",
+    "allow-save-user-config",
+    "allow-close-splashscreen"
+  ]
 }

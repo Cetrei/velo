@@ -8,20 +8,31 @@ def androidHome = project.findProperty("veloAndroidHome") ?: "NO_ENCONTRADO"
 println ">>> [VELD] Java version from props: ${javaVersion}"
 println ">>> [VELD] ANDROID_HOME from props: ${androidHome}"
 
-// Local dev: apps/web/android/keystore.properties (gitignored, copy from keystore.properties.example).
+// Local dev: apps/web/android/keystore.properties (gitignored, copy from keystore.properties.example
+// which lives in the same apps/web/android/ folder, one level above this build.gradle).
 // CI: VELO_ANDROID_STORE_PASSWORD / VELO_ANDROID_KEY_ALIAS / VELO_ANDROID_KEY_PASSWORD env vars,
 // with the decoded keystore file placed at app/velo-upload.keystore before the build runs.
-def keystorePropsFile = file('keystore.properties')
+def keystorePropsFile = file('../keystore.properties')
 def veloSigningConfig = null
 if (keystorePropsFile.exists()) {
     def props = new Properties()
     keystorePropsFile.withInputStream { props.load(it) }
+    def storeFilePath = props.getProperty('storeFile')
+    def resolvedStoreFile = file(storeFilePath)
+    if (!resolvedStoreFile.exists()) {
+        resolvedStoreFile = file("../${storeFilePath}")
+    }
     veloSigningConfig = [
-        storeFile: file(props.getProperty('storeFile')),
+        storeFile: resolvedStoreFile,
         storePassword: props.getProperty('storePassword'),
         keyAlias: props.getProperty('keyAlias'),
         keyPassword: props.getProperty('keyPassword'),
     ]
+    if (!resolvedStoreFile.exists()) {
+        println ">>> [VELD] WARNING: keystore.properties found but storeFile does not exist at ${resolvedStoreFile.absolutePath}, release APK will fail to sign"
+    } else {
+        println ">>> [VELD] Signing release APK with keystore at ${resolvedStoreFile.absolutePath}"
+    }
 } else if (System.getenv('VELO_ANDROID_STORE_PASSWORD')) {
     veloSigningConfig = [
         storeFile: file('velo-upload.keystore'),
@@ -41,8 +52,8 @@ android {
         applicationId "com.cetrei.velo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode rootProject.ext.veloVersionCode
+        versionName rootProject.ext.veloVersionName
 
         buildConfigField "String", "ANDROID_HOME_PATH", "\"${androidHome.replace('\\', '/')}\""
 

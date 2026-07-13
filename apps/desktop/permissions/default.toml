@@ -1,0 +1,35 @@
+[[permission]]
+identifier = "allow-push-frame"
+description = "Allows pushing a decoded WebRTC video frame into the virtual camera driver."
+commands.allow = ["push_frame"]
+
+[[permission]]
+identifier = "allow-get-system-config"
+description = "Allows reading the bundled read-only system.yml config."
+commands.allow = ["get_system_config"]
+
+[[permission]]
+identifier = "allow-get-user-config"
+description = "Allows reading the user's writable user.yml config."
+commands.allow = ["get_user_config"]
+
+[[permission]]
+identifier = "allow-save-user-config"
+description = "Allows writing the user's writable user.yml config."
+commands.allow = ["save_user_config"]
+
+[[permission]]
+identifier = "allow-close-splashscreen"
+description = "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window."
+commands.allow = ["close_splashscreen"]
+
+[[set]]
+identifier = "default"
+description = "Default permission set granting access to all of Velo's own app-level commands."
+permissions = [
+  "allow-push-frame",
+  "allow-get-system-config",
+  "allow-get-user-config",
+  "allow-save-user-config",
+  "allow-close-splashscreen",
+]

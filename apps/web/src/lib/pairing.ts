@@ -28,6 +28,19 @@ export interface PairingFromUrl {
 
 export function getPairingFromUrl(): PairingFromUrl | null {
   const params = new URLSearchParams(window.location.search);
+  return extractPairingFromParams(params);
+}
+
+export function getPairingFromUrlString(url: string): PairingFromUrl | null {
+  try {
+    const parsed = new URL(url);
+    return extractPairingFromParams(parsed.searchParams);
+  } catch {
+    return null;
+  }
+}
+
+function extractPairingFromParams(params: URLSearchParams): PairingFromUrl | null {
   const roomId = params.get('room');
   const otp = params.get('otp');
   if (!roomId || !otp) {
@@ -50,9 +63,22 @@ export async function createPairing(signalingUrl: string): Promise<CreatePairing
   return (await response.json()) as CreatePairingResponse;
 }
 
+export async function resolvePairingByOtp(signalingUrl: string, otp: string): Promise<PairingFromUrl> {
+  const response = await fetch(`${signalingUrl}/pairing/resolve/${otp}`);
+  if (!response.ok) {
+    throw new Error('[WEB] No active pairing found for that code');
+  }
+  const body = (await response.json()) as { roomId: string };
+  return { roomId: body.roomId, otp };
+}
+
 export function buildPairingUrl(baseUrl: string, roomId: string, otp: string): string {
   const url = new URL(baseUrl);
   url.searchParams.set('room', roomId);
   url.searchParams.set('otp', otp);
   return url.toString();
+}
+
+export function buildPairingDeepLink(roomId: string, otp: string): string {
+  return `velo://pair?room=${encodeURIComponent(roomId)}&otp=${encodeURIComponent(otp)}`;
 }
