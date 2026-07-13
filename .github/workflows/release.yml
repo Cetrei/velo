@@ -27,7 +27,11 @@ jobs:
 
       - name: Sync version from tag
         shell: cmd
-        run: bun run sync:version ${{ github.ref_name }}
+        run: |
+          echo --- content seen by cmd before sync ---
+          type apps\desktop\tauri.conf.json
+          echo --- end content ---
+          bun run sync:version ${{ github.ref_name }}
 
       - name: Build web frontend
         working-directory: apps/web
