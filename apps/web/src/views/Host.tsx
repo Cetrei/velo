@@ -8,7 +8,6 @@ import { useDeepLinkPairing } from '../hooks/useDeepLinkPairing';
 import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
 import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
-import { DevStageLogPanel } from '../components/DevStageLogPanel';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
 
@@ -62,7 +61,7 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
   const { stream, error } = useCameraStream();
   useWakeLock();
 
-  const { connectionState, stage, stageDetail, remotePeer, stageHistory, disconnect } = useWebRtc({
+  const { connectionState, stage, stageDetail, remotePeer, disconnect } = useWebRtc({
     signalingUrl: getSignalingUrl(),
     roomId: pairing.roomId,
     otp: pairing.otp,
@@ -112,7 +111,6 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
         remotePeer={remotePeer}
         onDisconnect={handleDisconnect}
       />
-      <DevStageLogPanel stageHistory={stageHistory} />
     </main>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useWebRtc } from '../hooks/useWebRTC';
 import { useFramePusher } from '../hooks/useFramePusher';
+import { useConfig } from '../hooks/useConfig';
 import { buildPairingUrl, createPairing, getSignalingUrl } from '../lib/pairing';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { UpdateBanner } from '../components/UpdateBanner';
@@ -91,13 +92,15 @@ export function Viewer() {
   const signalingUrl = useMemo(() => getSignalingUrl(), []);
   const [showSettings, setShowSettings] = useState(false);
   const { pairing, error, isGenerating, generate, clear } = usePairingSession(signalingUrl);
+  const { config } = useConfig();
+  const devModeEnabled = config?.behavior.dev_mode_enabled ?? false;
 
   const pairingUrl = useMemo(() => {
     if (!pairing) return null;
     return buildPairingUrl(window.location.origin + '/host', pairing.roomId, pairing.otp);
   }, [pairing]);
 
-  const { connectionState, stage, stageDetail, remoteStream, remotePeer, stageHistory, disconnect } = useWebRtc({
+  const { connectionState, stage, stageDetail, remoteStream, remotePeer, disconnect } = useWebRtc({
     signalingUrl,
     roomId: pairing?.roomId ?? '',
     otp: pairing?.otp ?? '',
@@ -155,7 +158,7 @@ export function Viewer() {
         </button>
       </div>
       {showSettings && <SettingsPanel />}
-      <DevStageLogPanel stageHistory={stageHistory} />
+      <DevStageLogPanel isEnabled={devModeEnabled} />
       <UpdateBanner />
     </main>
   );

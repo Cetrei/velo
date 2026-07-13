@@ -30,18 +30,11 @@ const STAGE_TO_CONNECTION_STATE: Record<WebRtcStage, ConnectionState> = {
 };
 
 const WAITING_FOR_PEER_TIMEOUT_MS = 30_000;
-const MAX_STAGE_HISTORY_ENTRIES = 50;
 
 export interface RemotePeerInfo {
   peerId: string;
   role: PeerRole;
   deviceName: string;
-}
-
-export interface StageTransition {
-  stage: WebRtcStage;
-  detail?: string;
-  timestamp: number;
 }
 
 interface UseWebRtcOptions {
@@ -57,7 +50,6 @@ interface UseWebRtcOptions {
 type StageListener = (stage: WebRtcStage, detail?: string) => void;
 type RemoteStreamListener = (stream: MediaStream | null) => void;
 type RemotePeerListener = (peer: RemotePeerInfo | null) => void;
-type StageHistoryListener = (history: StageTransition[]) => void;
 
 interface ConnectionHandle {
   sessionId: string;
@@ -66,11 +58,9 @@ interface ConnectionHandle {
   stageListeners: Set<StageListener>;
   streamListeners: Set<RemoteStreamListener>;
   peerListeners: Set<RemotePeerListener>;
-  stageHistoryListeners: Set<StageHistoryListener>;
   currentStage: WebRtcStage;
   currentRemoteStream: MediaStream | null;
   currentRemotePeer: RemotePeerInfo | null;
-  stageHistory: StageTransition[];
   refCount: number;
   hasSentOffer: boolean;
   waitingForPeerTimer: ReturnType<typeof setTimeout> | null;
@@ -93,16 +83,9 @@ function logWarn(role: PeerRole, roomId: string, sessionId: string, message: str
   console.warn(`[WEBRTC][${role}][${roomId || 'no-room'}][session:${sessionId.slice(0, 8)}] ${message}`);
 }
 
-function appendStageHistory(handle: ConnectionHandle, stage: WebRtcStage, detail?: string): void {
-  const transition: StageTransition = { stage, detail, timestamp: Date.now() };
-  handle.stageHistory = [...handle.stageHistory, transition].slice(-MAX_STAGE_HISTORY_ENTRIES);
-  handle.stageHistoryListeners.forEach((listener) => listener(handle.stageHistory));
-}
-
 function setHandleStage(handle: ConnectionHandle, role: PeerRole, roomId: string, stage: WebRtcStage, detail?: string): void {
   handle.currentStage = stage;
   logStage(role, roomId, handle.sessionId, stage, detail);
-  appendStageHistory(handle, stage, detail);
   handle.stageListeners.forEach((listener) => listener(stage, detail));
 }
 
@@ -275,11 +258,9 @@ function createConnection(
     stageListeners: new Set(),
     streamListeners: new Set(),
     peerListeners: new Set(),
-    stageHistoryListeners: new Set(),
     currentStage: 'idle',
     currentRemoteStream: null,
     currentRemotePeer: null,
-    stageHistory: [],
     refCount: 0,
     hasSentOffer: false,
     waitingForPeerTimer: null,
@@ -430,7 +411,6 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
   const [stageDetail, setStageDetail] = useState<string | undefined>(undefined);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [remotePeer, setRemotePeer] = useState<RemotePeerInfo | null>(null);
-  const [stageHistory, setStageHistory] = useState<StageTransition[]>([]);
   const handleRef = useRef<ConnectionHandle | null>(null);
   const keyRef = useRef<string | null>(null);
   const signalingUrlRef = useRef(signalingUrl);
@@ -460,24 +440,20 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
     };
     const streamListener: RemoteStreamListener = (stream) => setRemoteStream(stream);
     const peerListener: RemotePeerListener = (peer) => setRemotePeer(peer);
-    const stageHistoryListener: StageHistoryListener = (history) => setStageHistory(history);
 
     handle.stageListeners.add(stageListener);
     handle.streamListeners.add(streamListener);
     handle.peerListeners.add(peerListener);
-    handle.stageHistoryListeners.add(stageHistoryListener);
 
     setStage(handle.currentStage);
     setStageDetail(undefined);
     setRemoteStream(handle.currentRemoteStream);
     setRemotePeer(handle.currentRemotePeer);
-    setStageHistory(handle.stageHistory);
 
     return () => {
       handle!.stageListeners.delete(stageListener);
       handle!.streamListeners.delete(streamListener);
       handle!.peerListeners.delete(peerListener);
-      handle!.stageHistoryListeners.delete(stageHistoryListener);
       handle!.refCount -= 1;
 
       if (handle!.refCount <= 0) {
@@ -508,7 +484,6 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
     connectionState: STAGE_TO_CONNECTION_STATE[stage],
     remoteStream,
     remotePeer,
-    stageHistory,
     disconnect,
     peer: handleRef.current?.peer ?? null,
     socket: handleRef.current?.socket ?? null,

@@ -25,9 +25,7 @@ jobs:
       - name: Cache Cargo registry and build output
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            apps/desktop -> target
-            crates/vcam-driver -> target
+          workspaces: . -> target
 
       - name: Cache root Bun dependencies
         uses: actions/cache@v4
@@ -51,13 +49,13 @@ jobs:
           path: |
             ~/.bun/install/cache
             apps/web/node_modules
-          key: ${{ runner.os }}-bun-web-${{ hashFiles('apps/web/bun.lock', 'apps/web/package.json') }}
+          key: ${{ runner.os }}-bun-web-${{ hashFiles('bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-web-
 
       - name: Build web frontend
         working-directory: apps/web
-        run: bun install && bun run build
+        run: bun run build
 
       - name: Build and sign desktop app
         uses: tauri-apps/tauri-action@v0
@@ -117,13 +115,9 @@ jobs:
           path: |
             ~/.bun/install/cache
             apps/web/node_modules
-          key: ${{ runner.os }}-bun-web-${{ hashFiles('apps/web/bun.lock', 'apps/web/package.json') }}
+          key: ${{ runner.os }}-bun-web-${{ hashFiles('bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-web-
-
-      - name: Install web dependencies
-        working-directory: apps/web
-        run: bun install
 
       - name: Sync Capacitor Android project
         run: bun run install:android
