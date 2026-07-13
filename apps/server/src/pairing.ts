@@ -57,7 +57,10 @@ export function consumePairing(roomId: string, otp: string): boolean {
     console.warn(formatLog(LogMessage.PairingKeyMismatch, { roomId }));
     return false;
   }
-  pendingPairings.delete(roomId);
+  const currentPeerCount = roomPeerCounts.get(roomId) ?? 0;
+  if (currentPeerCount + 1 >= MAX_PEERS_PER_ROOM) {
+    pendingPairings.delete(roomId);
+  }
   return true;
 }
 
