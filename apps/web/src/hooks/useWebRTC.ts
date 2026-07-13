@@ -273,6 +273,11 @@ function createConnection(
     setHandleStage(handle, role, roomId, stage, detail);
   }
 
+  function teardownActiveSocketAndPeer(): void {
+    handle.peer?.close();
+    handle.socket?.disconnect();
+  }
+
   async function trySendOfferOnce(peer: RTCPeerConnection, socket: Socket) {
     if (!isInitiator || handle.hasSentOffer || isTornDown) return;
     handle.hasSentOffer = true;
@@ -280,6 +285,7 @@ function createConnection(
   }
 
   async function connect() {
+    teardownActiveSocketAndPeer();
     stageIfActive('loadingConfig');
     const [systemConfig, userConfig] = await Promise.all([loadSystemConfig(signalingUrl), loadUserConfig(signalingUrl)]);
     if (isTornDown) return;
@@ -393,8 +399,7 @@ function createConnection(
     isTornDown = true;
     if (handle.reconnectTimer) clearTimeout(handle.reconnectTimer);
     clearWaitingForPeerTimer(handle);
-    handle.peer?.close();
-    handle.socket?.disconnect();
+    teardownActiveSocketAndPeer();
     activeConnections.delete(key);
   };
 
