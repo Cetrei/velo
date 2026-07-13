@@ -35,6 +35,7 @@ const MAX_STAGE_HISTORY_ENTRIES = 50;
 export interface RemotePeerInfo {
   peerId: string;
   role: PeerRole;
+  deviceName: string;
 }
 
 export interface StageTransition {
@@ -119,6 +120,64 @@ function clearWaitingForPeerTimer(handle: ConnectionHandle): void {
   if (handle.waitingForPeerTimer) {
     clearTimeout(handle.waitingForPeerTimer);
     handle.waitingForPeerTimer = null;
+  }
+}
+
+const ICE_CANDIDATE_TYPE_LABELS: Record<string, string> = {
+  host: 'direct (same network)',
+  srflx: 'STUN reflexive (public IP behind NAT)',
+  prflx: 'peer reflexive (discovered during negotiation)',
+  relay: 'TURN relay',
+};
+
+function describeCandidateType(candidateType: string | undefined): string {
+  if (!candidateType) return 'unknown';
+  return ICE_CANDIDATE_TYPE_LABELS[candidateType] ?? candidateType;
+}
+
+async function reportIceFailureDiagnostics(
+  peer: RTCPeerConnection,
+  role: PeerRole,
+  roomId: string,
+  sessionId: string,
+): Promise<void> {
+  const stats = await peer.getStats();
+  const localCandidates = new Map<string, RTCIceCandidateStats>();
+  const remoteCandidates = new Map<string, RTCIceCandidateStats>();
+  const candidatePairs: RTCIceCandidatePairStats[] = [];
+
+  stats.forEach((report) => {
+    if (report.type === 'local-candidate') localCandidates.set(report.id, report as RTCIceCandidateStats);
+    if (report.type === 'remote-candidate') remoteCandidates.set(report.id, report as RTCIceCandidateStats);
+    if (report.type === 'candidate-pair') candidatePairs.push(report as RTCIceCandidatePairStats);
+  });
+
+  if (candidatePairs.length === 0) {
+    logWarn(role, roomId, sessionId, '[ICE_DIAGNOSTICS] no candidate pairs were ever formed, ICE gathering likely produced zero usable candidates on one side');
+    return;
+  }
+
+  candidatePairs.forEach((pair) => {
+    const local = localCandidates.get(pair.localCandidateId ?? '');
+    const remote = remoteCandidates.get(pair.remoteCandidateId ?? '');
+    const localType = describeCandidateType(local?.candidateType);
+    const remoteType = describeCandidateType(remote?.candidateType);
+    logWarn(
+      role,
+      roomId,
+      sessionId,
+      `[ICE_DIAGNOSTICS] pair state=${pair.state} local=${localType} remote=${remoteType} nominated=${Boolean(pair.nominated)}`,
+    );
+  });
+
+  const everHadRelayCandidate = Array.from(localCandidates.values()).some((candidate) => candidate.candidateType === 'relay');
+  if (!everHadRelayCandidate) {
+    logWarn(
+      role,
+      roomId,
+      sessionId,
+      '[ICE_DIAGNOSTICS] no relay (TURN) candidate was ever gathered, only STUN/host candidates were tried, this connection has no fallback for symmetric NAT',
+    );
   }
 }
 
@@ -258,6 +317,9 @@ function createConnection(
       const iceState = peer.iceConnectionState;
       logStage(role, roomId, sessionId, 'negotiating', `ice: ${iceState}`);
       if (iceState === 'failed') {
+        reportIceFailureDiagnostics(peer, role, roomId, sessionId).catch((diagnosticsError) => {
+          logWarn(role, roomId, sessionId, `failed to collect ICE diagnostics: ${String(diagnosticsError)}`);
+        });
         stageIfActive('failed', 'ICE connection failed');
       }
     };
@@ -293,8 +355,8 @@ function createConnection(
       const firstPeer = payload.peers[0];
       if (firstPeer) {
         clearWaitingForPeerTimer(handle);
-        setHandleRemotePeer(handle, { peerId: firstPeer.peerId, role: firstPeer.role });
-        stageIfActive('negotiating', `peer ${firstPeer.peerId} (${firstPeer.role}) present via room-sync`);
+        setHandleRemotePeer(handle, { peerId: firstPeer.peerId, role: firstPeer.role, deviceName: firstPeer.deviceName });
+        stageIfActive('negotiating', `peer ${firstPeer.peerId} (${firstPeer.role}, ${firstPeer.deviceName}) present via room-sync`);
         trySendOfferOnce(peer, socket).catch((offerError) => {
           logWarn(role, roomId, sessionId, `failed to send offer after room-sync: ${String(offerError)}`);
         });
@@ -305,9 +367,10 @@ function createConnection(
 
     socket.on('peer-joined', (payload: PeerPresencePayload) => {
       if (payload.roomId !== roomId) return;
-      setHandleRemotePeer(handle, { peerId: payload.peerId, role: payload.role });
+      const joinedDeviceName = payload.deviceName ?? 'unknown device';
+      setHandleRemotePeer(handle, { peerId: payload.peerId, role: payload.role, deviceName: joinedDeviceName });
       clearWaitingForPeerTimer(handle);
-      stageIfActive('negotiating', `peer ${payload.peerId} (${payload.role}) present`);
+      stageIfActive('negotiating', `peer ${payload.peerId} (${payload.role}, ${joinedDeviceName}) present`);
       trySendOfferOnce(peer, socket).catch((offerError) => {
         logWarn(role, roomId, sessionId, `failed to send offer after peer join: ${String(offerError)}`);
       });

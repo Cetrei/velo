@@ -66,13 +66,13 @@ export function DevStageLogPanel({ stageHistory }: DevStageLogPanelProps) {
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}
         aria-label="Hold to reveal connection debug log"
-        className="h-3 w-full opacity-0"
+        className="fixed bottom-3 right-3 h-6 w-6 rounded-md border border-transparent opacity-0 transition-colors hover:border-velo-text-secondary/40 hover:opacity-100 focus-visible:border-velo-text-secondary/40 focus-visible:opacity-100"
       />
     );
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-2 rounded-xl bg-velo-surface p-3">
+    <div className="fixed bottom-3 right-3 flex w-72 max-w-[calc(100vw-1.5rem)] flex-col gap-2 rounded-xl bg-velo-surface p-3 shadow-lg">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-velo-text-primary">Connection debug log</span>
         <button onClick={() => setIsVisible(false)} className="text-xs text-velo-indigo underline">
