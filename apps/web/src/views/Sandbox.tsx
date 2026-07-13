@@ -1,20 +1,20 @@
 import { useCallback, useState } from 'react';
-import { getPairingFromUrl, type PairingFromUrl } from '../lib/pairing';
+import { getPairingFromUrl, getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
 import { PairingChoice } from '../components/PairingChoice';
+import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { StreamingView } from './Host';
+import { Landing } from './Landing';
+import { Downloads } from './Downloads';
 
-function EmptyLanding() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-text-primary">
-      <p className="text-velo-text-secondary">
-        You're viewing Velo in a plain browser. Open the Velo desktop app or the Velo mobile app to pair a camera and start streaming.
-      </p>
-    </main>
-  );
+type SandboxRoute = 'landing' | 'downloads' | 'enterCode';
+
+function resolveRouteFromPath(): SandboxRoute {
+  return window.location.pathname.startsWith('/downloads') ? 'downloads' : 'landing';
 }
 
 export function Sandbox() {
   const [urlPairing] = useState<PairingFromUrl | null>(() => getPairingFromUrl());
+  const [route, setRoute] = useState<SandboxRoute>(() => resolveRouteFromPath());
   const [hasChosenBrowser, setHasChosenBrowser] = useState(false);
   const [activePairing, setActivePairing] = useState<PairingFromUrl | null>(null);
 
@@ -27,19 +27,29 @@ export function Sandbox() {
   const handleExit = useCallback(() => {
     setActivePairing(null);
     setHasChosenBrowser(false);
+    setRoute('landing');
   }, []);
-
-  if (!urlPairing) {
-    return <EmptyLanding />;
-  }
 
   if (activePairing) {
     return <StreamingView pairing={activePairing} onExit={handleExit} />;
   }
 
-  if (!hasChosenBrowser) {
+  if (urlPairing && !hasChosenBrowser) {
     return <PairingChoice pairing={urlPairing} onContinueInBrowser={handleContinueInBrowser} />;
   }
 
-  return <EmptyLanding />;
+  if (route === 'downloads') {
+    return <Downloads />;
+  }
+
+  if (route === 'enterCode') {
+    return <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setActivePairing} />;
+  }
+
+  return (
+    <Landing
+      onUseInBrowser={() => setRoute('enterCode')}
+      onGoToDownloads={() => setRoute('downloads')}
+    />
+  );
 }

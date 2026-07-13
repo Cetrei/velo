@@ -74,6 +74,13 @@ jobs:
         if: ${{ env.VELO_ANDROID_KEYSTORE_BASE64 != '' }}
         run: echo "$VELO_ANDROID_KEYSTORE_BASE64" | base64 -d > apps/web/android/app/velo-upload.keystore
 
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: bun install
+
+      - name: Sync Capacitor Android project
+        run: bun run install:android
+
       - name: Build Android release APK
         env:
           VELO_ANDROID_STORE_PASSWORD: ${{ secrets.VELO_ANDROID_STORE_PASSWORD }}
