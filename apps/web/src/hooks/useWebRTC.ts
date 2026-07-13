@@ -135,6 +135,10 @@ function describeCandidateType(candidateType: string | undefined): string {
   return ICE_CANDIDATE_TYPE_LABELS[candidateType] ?? candidateType;
 }
 
+interface IceCandidateStatsShape extends RTCStats {
+  candidateType?: string;
+}
+
 async function reportIceFailureDiagnostics(
   peer: RTCPeerConnection,
   role: PeerRole,
@@ -142,13 +146,13 @@ async function reportIceFailureDiagnostics(
   sessionId: string,
 ): Promise<void> {
   const stats = await peer.getStats();
-  const localCandidates = new Map<string, RTCIceCandidateStats>();
-  const remoteCandidates = new Map<string, RTCIceCandidateStats>();
+  const localCandidates = new Map<string, IceCandidateStatsShape>();
+  const remoteCandidates = new Map<string, IceCandidateStatsShape>();
   const candidatePairs: RTCIceCandidatePairStats[] = [];
 
   stats.forEach((report) => {
-    if (report.type === 'local-candidate') localCandidates.set(report.id, report as RTCIceCandidateStats);
-    if (report.type === 'remote-candidate') remoteCandidates.set(report.id, report as RTCIceCandidateStats);
+    if (report.type === 'local-candidate') localCandidates.set(report.id, report as IceCandidateStatsShape);
+    if (report.type === 'remote-candidate') remoteCandidates.set(report.id, report as IceCandidateStatsShape);
     if (report.type === 'candidate-pair') candidatePairs.push(report as RTCIceCandidatePairStats);
   });
 
