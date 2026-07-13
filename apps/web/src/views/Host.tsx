@@ -68,6 +68,7 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
     role: 'host',
     isInitiator: true,
     localStream: stream,
+    readyToJoin: stream !== null,
   });
 
   useForegroundStreamingService(connectionState === 'connected');
@@ -88,6 +89,14 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
     return (
       <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-coral">
         <p>{error}</p>
+      </main>
+    );
+  }
+
+  if (!stream) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-text-secondary">
+        <p>Waiting for the camera to become available…</p>
       </main>
     );
   }

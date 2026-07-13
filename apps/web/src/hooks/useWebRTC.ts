@@ -12,6 +12,7 @@ interface UseWebRtcOptions {
   role: PeerRole;
   isInitiator: boolean;
   localStream?: MediaStream | null;
+  readyToJoin?: boolean;
 }
 
 export interface RemotePeerInfo {
@@ -87,7 +88,7 @@ function attachPresenceHandlers(
   });
 }
 
-export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localStream }: UseWebRtcOptions) {
+export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin = true }: UseWebRtcOptions) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [remotePeer, setRemotePeer] = useState<RemotePeerInfo | null>(null);
@@ -95,6 +96,10 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    if (!readyToJoin) {
+      return;
+    }
+
     let isCancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -140,7 +145,7 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
       peerRef.current?.close();
       socketRef.current?.disconnect();
     };
-  }, [signalingUrl, roomId, otp, role, isInitiator, localStream]);
+  }, [signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin]);
 
   const disconnect = useCallback(() => {
     socketRef.current?.emit('disconnect-peer', { roomId });
