@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ANDROID_DIR = join('apps', 'web', 'android');
@@ -25,6 +25,13 @@ function resolveJavaVersion(): number {
 
 function resolveGradlewCommand(): string {
   return process.platform === 'win32' ? GRADLEW_WINDOWS : GRADLEW_UNIX;
+}
+
+function ensureGradlewIsExecutable(): void {
+  if (process.platform === 'win32') return;
+  const gradlewPath = join(ANDROID_DIR, 'gradlew');
+  if (!existsSync(gradlewPath)) return;
+  chmodSync(gradlewPath, 0o755);
 }
 
 function writeGradleProperties(javaVersion: number): void {
@@ -67,6 +74,7 @@ function runGradleTask(taskName: string): void {
 
   writeGradleProperties(javaVersion);
   writeCapacitorBuildGradle(javaVersion);
+  ensureGradlewIsExecutable();
 
   if (gradleJavaHome) {
     console.log(`[BUILD] JAVA_HOME: ${gradleJavaHome}`);

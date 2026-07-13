@@ -25,17 +25,6 @@ jobs:
       - name: Install root dependencies
         run: bun install
 
-      - name: Debug tauri conf content
-        shell: bash
-        run: |
-          echo "--- byte length and hash ---"
-          wc -c apps/desktop/tauri.conf.json
-          sha256sum apps/desktop/tauri.conf.json
-          echo "--- first 200 bytes as hex ---"
-          head -c 200 apps/desktop/tauri.conf.json | xxd
-          echo "--- raw grep for version field ---"
-          grep -n "version" apps/desktop/tauri.conf.json
-
       - name: Sync version from tag
         shell: cmd
         run: bun run sync:version ${{ github.ref_name }}
