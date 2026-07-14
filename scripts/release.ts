@@ -1,16 +1,47 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const BACKEND_VERSION_TAG_PATTERN = /^backend-v(\d+)\.(\d+)\.(\d+)$/;
+const SEMVER_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
 const BACKEND_FLAG = '--backend';
+const WEB_FLAG = '--web';
+const WEB_PACKAGE_JSON_PATH = join('apps', 'web', 'package.json');
 
 type SemVer = [number, number, number];
 type BumpKind = 'major' | 'minor' | 'patch';
-type ReleaseTarget = 'app' | 'backend';
+type ReleaseTarget = 'app' | 'backend' | 'web';
+
+interface PackageJsonRead {
+  raw: string;
+  parsed: Record<string, unknown>;
+}
 
 function parseBumpFlag(arg: string): BumpKind | null {
   if (arg === '--major') return 'major';
   if (arg === '--minor') return 'minor';
   if (arg === '--patch') return 'patch';
   return null;
+}
+
+function findBumpFlag(): BumpKind | null {
+  const args = process.argv.slice(2);
+  for (const arg of args) {
+    const kind = parseBumpFlag(arg);
+    if (kind) return kind;
+  }
+  return null;
+}
+
+function parseReleaseTarget(): ReleaseTarget {
+  const args = process.argv.slice(2);
+  if (args.includes(BACKEND_FLAG)) return 'backend';
+  if (args.includes(WEB_FLAG)) return 'web';
+  return 'app';
+}
+
+function isTargetFlag(arg: string): boolean {
+  return arg === BACKEND_FLAG || arg === WEB_FLAG;
 }
 
 function listVersionTags(target: ReleaseTarget): string[] {
@@ -56,14 +87,9 @@ function resolveVersionTagFromBumpFlag(kind: BumpKind, target: ReleaseTarget): s
   return nextTag;
 }
 
-function parseReleaseTarget(): ReleaseTarget {
+function parseVersionArg(target: ReleaseTarget): string {
   const args = process.argv.slice(2);
-  return args.includes(BACKEND_FLAG) ? 'backend' : 'app';
-}
-
-function parseVersionArg(): string {
-  const args = process.argv.slice(2);
-  const arg = args.find((value) => value !== BACKEND_FLAG);
+  const arg = args.find((value) => !isTargetFlag(value));
   if (!arg) {
     console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z | backend-vX.Y.Z | --major | --minor | --patch [--backend]');
     process.exit(1);
@@ -71,7 +97,6 @@ function parseVersionArg(): string {
 
   const bumpKind = parseBumpFlag(arg);
   if (bumpKind) {
-    const target = parseReleaseTarget();
     return resolveVersionTagFromBumpFlag(bumpKind, target);
   }
 
@@ -88,6 +113,11 @@ function runGitCommand(args: string[]): void {
     console.error(`[RELEASE] git ${args.join(' ')} failed`);
     process.exit(1);
   }
+}
+
+function runGit(args: string[]): { success: boolean; stdout: string } {
+  const result = Bun.spawnSync(['git', ...args]);
+  return { success: result.success, stdout: result.stdout.toString() };
 }
 
 function tagExistsLocally(tag: string): boolean {
@@ -108,8 +138,95 @@ function createAndPushTag(tag: string): void {
   console.log(`[RELEASE] Done. Track the build at https://github.com/Cetrei/velo/actions`);
 }
 
-function main(): void {
-  const tag = parseVersionArg();
+function readPackageJson(path: string): PackageJsonRead {
+  const raw = readFileSync(path, 'utf-8');
+  return { raw, parsed: JSON.parse(raw) };
+}
+
+function parseSemver(version: string, path: string): SemVer {
+  const match = version.match(SEMVER_PATTERN);
+  if (!match) {
+    console.error(`[RELEASE] ${path} version "${version}" is not a plain X.Y.Z semver`);
+    process.exit(1);
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function bumpPlainSemver(version: string, kind: BumpKind, path: string): string {
+  const [major, minor, patch] = parseSemver(version, path);
+  if (kind === 'major') return `${major + 1}.0.0`;
+  if (kind === 'minor') return `${major}.${minor + 1}.0`;
+  return `${major}.${minor}.${patch + 1}`;
+}
+
+function writeNextVersion(path: string, nextVersion: string): void {
+  const { raw, parsed } = readPackageJson(path);
+  parsed.version = nextVersion;
+  const indentMatch = raw.match(/\n( +)"/);
+  const indent = indentMatch ? indentMatch[1] : '  ';
+  writeFileSync(path, `${JSON.stringify(parsed, null, indent)}\n`, 'utf-8');
+}
+
+function hasUncommittedChangeAt(path: string): boolean {
+  const result = runGit(['status', '--porcelain', '--', path]);
+  return result.stdout.trim().length > 0;
+}
+
+function commitVersionBump(path: string, nextVersion: string, label: string): void {
+  const hasChangeToCommit = hasUncommittedChangeAt(path);
+  if (!hasChangeToCommit) {
+    console.warn(`[RELEASE] ${path} has no tracked changes to commit, skipping auto-commit`);
+    return;
+  }
+
+  const added = runGit(['add', path]);
+  if (!added.success) {
+    console.warn(`[RELEASE] git add ${path} failed, leaving the bump uncommitted`);
+    return;
+  }
+
+  const commitMessage = `chore(${label}): bump version to ${nextVersion}`;
+  const committed = runGit(['commit', '-m', commitMessage, '--', path]);
+  if (!committed.success) {
+    console.warn('[RELEASE] git commit for the version bump failed, leaving the bump uncommitted');
+    return;
+  }
+  console.log(`[RELEASE] Committed version bump: "${commitMessage}"`);
+}
+
+function applyWebVersionBumpIfRequested(): void {
+  const bumpKind = findBumpFlag();
+  if (!bumpKind) {
+    console.log('[RELEASE] No --major/--minor/--patch flag given, deploying web without a version bump');
+    return;
+  }
+
+  const { parsed } = readPackageJson(WEB_PACKAGE_JSON_PATH);
+  const currentVersion = String(parsed.version);
+  const nextVersion = bumpPlainSemver(currentVersion, bumpKind, WEB_PACKAGE_JSON_PATH);
+  writeNextVersion(WEB_PACKAGE_JSON_PATH, nextVersion);
+  console.log(`[RELEASE] apps/web version ${currentVersion} -> ${nextVersion}`);
+  commitVersionBump(WEB_PACKAGE_JSON_PATH, nextVersion, 'web');
+}
+
+function runOrExit(command: string[], cwd?: string): void {
+  const result = Bun.spawnSync(command, { stdout: 'inherit', stderr: 'inherit', cwd });
+  if (!result.success) {
+    console.error(`[RELEASE] ${command.join(' ')} failed`);
+    process.exit(1);
+  }
+}
+
+function releaseWeb(): void {
+  applyWebVersionBumpIfRequested();
+  const webDir = join('apps', 'web');
+  runOrExit(['bun', 'run', 'build'], webDir);
+  runOrExit(['wrangler', 'pages', 'deploy', 'dist', '--project-name=velo'], webDir);
+  console.log('[RELEASE] Web deploy complete. This target does not create a git tag or push to origin.');
+}
+
+function releaseTagged(target: ReleaseTarget): void {
+  const tag = parseVersionArg(target);
 
   if (hasUncommittedChanges()) {
     console.error('[RELEASE] Uncommitted changes detected. Commit or stash before tagging a release.');
@@ -122,6 +239,15 @@ function main(): void {
   }
 
   createAndPushTag(tag);
+}
+
+function main(): void {
+  const target = parseReleaseTarget();
+  if (target === 'web') {
+    releaseWeb();
+    return;
+  }
+  releaseTagged(target);
 }
 
 main();

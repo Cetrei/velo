@@ -24,11 +24,13 @@
     "typecheck:all": "bun run typecheck:shared && bun run typecheck:server && bun run typecheck:web",
     "check:rust": "bun run build:server && bun scripts/prepare-backend-sidecar.mjs && cargo check --manifest-path apps/desktop/Cargo.toml && cargo check --manifest-path crates/vcam-driver/Cargo.toml",
 
-    "verify:release": "bun run install:all && bun run typecheck:all && bun run check:rust",
-    "release:app": "bun run verify:release && bun scripts/release.ts",
-    "release:backend": "bun run typecheck:server && bun scripts/release.ts --backend",
+    "verify:app": "bun run typecheck:all && bun run check:rust",
+    "verify:backend": "bun run typecheck:server",
+    "verify:web": "bun run typecheck:web",
 
-    "release:web": "cd apps/web && bun run deploy",
+    "release:app": "bun run install:all && bun run verify:app && bun scripts/release.ts",
+    "release:backend": "bun run install:server && bun run verify:backend && bun scripts/release.ts --backend",
+    "release:web": "bun run install:web && bun run verify:web && bun scripts/release.ts --web",
 
     "install:root": "bun install",
     "install:server": "cd apps/server && bun install",
