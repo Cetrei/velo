@@ -48,6 +48,38 @@ function writeNextVersion(nextVersion: string): void {
   writeFileSync(PACKAGE_JSON_PATH, `${JSON.stringify(parsed, null, indent)}\n`, 'utf-8');
 }
 
+function runGit(args: string[]): { success: boolean; stdout: string } {
+  const result = Bun.spawnSync(['git', ...args], { cwd: join(import.meta.dir, '..', '..', '..') });
+  return { success: result.success, stdout: result.stdout.toString() };
+}
+
+function hasUncommittedPackageJsonChange(): boolean {
+  const result = runGit(['status', '--porcelain', '--', 'apps/web/package.json']);
+  return result.stdout.trim().length > 0;
+}
+
+function commitVersionBump(nextVersion: string): void {
+  const hasChangeToCommit = hasUncommittedPackageJsonChange();
+  if (!hasChangeToCommit) {
+    console.warn('[DEPLOY_WEB] apps/web/package.json has no tracked changes to commit, skipping auto-commit');
+    return;
+  }
+
+  const added = runGit(['add', 'apps/web/package.json']);
+  if (!added.success) {
+    console.warn('[DEPLOY_WEB] git add apps/web/package.json failed, leaving the bump uncommitted');
+    return;
+  }
+
+  const commitMessage = `chore(web): bump version to ${nextVersion}`;
+  const committed = runGit(['commit', '-m', commitMessage, '--', 'apps/web/package.json']);
+  if (!committed.success) {
+    console.warn('[DEPLOY_WEB] git commit for the version bump failed, leaving the bump uncommitted');
+    return;
+  }
+  console.log(`[DEPLOY_WEB] Committed version bump: "${commitMessage}"`);
+}
+
 function applyVersionBumpIfRequested(): void {
   const bumpKind = parseBumpKind();
   if (!bumpKind) {
@@ -60,6 +92,7 @@ function applyVersionBumpIfRequested(): void {
   const nextVersion = bumpVersion(currentVersion, bumpKind);
   writeNextVersion(nextVersion);
   console.log(`[DEPLOY_WEB] apps/web version ${currentVersion} -> ${nextVersion}`);
+  commitVersionBump(nextVersion);
 }
 
 function runOrExit(command: string[]): void {
