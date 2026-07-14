@@ -116,7 +116,11 @@ function BackendUpdateRow() {
   const isEnabled = config?.backend?.enabled ?? true;
 
   function describeStatus(): string {
-    if (status === 'ready') return `Update available: v${latestVersion}`;
+    if (status === 'ready') {
+      return currentVersion
+        ? `Update available: v${latestVersion} (currently v${currentVersion})`
+        : `Update available: v${latestVersion}`;
+    }
     if (!isInstalled) return 'Not installed';
     if (!isRunning) return currentVersion ? `Installed (v${currentVersion}), stopped` : 'Installed, stopped';
     return currentVersion ? `Running v${currentVersion}` : 'Running';
