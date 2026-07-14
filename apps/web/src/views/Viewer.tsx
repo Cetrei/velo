@@ -5,7 +5,8 @@ import { useFramePusher } from '../hooks/useFramePusher';
 import { useConfig } from '../hooks/useConfig';
 import { useUpdater } from '../hooks/useUpdater';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
-import { buildPairingUrl, createPairing, getSignalingUrl } from '../lib/pairing';
+import { useSignalingUrl } from '../hooks/useSignalingUrl';
+import { buildPairingUrl, createPairing } from '../lib/pairing';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
@@ -29,7 +30,8 @@ function usePairingSession(signalingUrl: string) {
       .then((response) => {
         setPairing({ roomId: response.roomId, otp: response.otp });
       })
-      .catch(() => {
+      .catch((pairingError: unknown) => {
+        console.error('[WEB] Failed to create pairing session', signalingUrl, pairingError);
         setError('Failed to create a pairing session. Check the signaling server.');
       })
       .finally(() => {
@@ -92,7 +94,7 @@ function PairingReadyPanel({
 }
 
 export function Viewer() {
-  const signalingUrl = useMemo(() => getSignalingUrl(), []);
+  const signalingUrl = useSignalingUrl();
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('user');
   const { pairing, error, isGenerating, generate, clear } = usePairingSession(signalingUrl);

@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 const DEFAULT_SIGNALING_PORT = '4001';
 
 /**
@@ -11,6 +13,10 @@ const DEFAULT_SIGNALING_PORT = '4001';
  * Local development fallback: if VITE_SIGNALING_URL is unset, falls back to the current hostname
  * with the signaling port, matching how `bun run dev:server` and `bun run dev:web` run side by side
  * on localhost.
+ *
+ * Only used directly by the phone (MOBILE_HOST), which reaches the desktop's bundled backend
+ * over the network. The desktop app itself should call resolveSignalingUrl instead, since it can
+ * talk to its own bundled backend on localhost without going through this env-based lookup.
  */
 export function getSignalingUrl(): string {
   const configuredUrl = import.meta.env.VITE_SIGNALING_URL as string | undefined;
@@ -19,6 +25,33 @@ export function getSignalingUrl(): string {
   }
   const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
   return `${protocol}//${window.location.hostname}:${DEFAULT_SIGNALING_PORT}`;
+}
+
+interface DesktopSystemConfig {
+  network: { signaling_port: number };
+}
+
+async function resolveLocalBackendSignalingUrl(): Promise<string | null> {
+  try {
+    const systemConfig = await invoke<DesktopSystemConfig>('get_system_config');
+    return `http://127.0.0.1:${systemConfig.network.signaling_port}`;
+  } catch (configError) {
+    console.warn('[WEB] Failed to read local backend signaling port, falling back to configured signaling URL', configError);
+    return null;
+  }
+}
+
+/**
+ * Resolves the signaling URL for the desktop app: the bundled backend runs on the same machine,
+ * so this always prefers localhost over VITE_SIGNALING_URL. Falls back to getSignalingUrl only if
+ * the local backend's port cannot be read, e.g. bundled config is missing.
+ *
+ * TODO-ARCH: no manual override exists yet for when the bundled backend is not installed or not
+ * running. Needs a settings field (and matching Rust config) before this fallback is meaningful.
+ */
+export async function resolveSignalingUrl(): Promise<string> {
+  const localUrl = await resolveLocalBackendSignalingUrl();
+  return localUrl ?? getSignalingUrl();
 }
 
 export interface PairingFromUrl {
