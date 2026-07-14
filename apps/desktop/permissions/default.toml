@@ -34,6 +34,11 @@ description = "Allows downloading and installing a newer backend binary, restart
 commands.allow = ["install_backend_update"]
 
 [[permission]]
+identifier = "allow-cancel-backend-update"
+description = "Allows cancelling an in-progress backend download or installation."
+commands.allow = ["cancel_backend_update"]
+
+[[permission]]
 identifier = "allow-get-backend-status"
 description = "Allows reading the currently running backend sidecar's version and health."
 commands.allow = ["get_backend_status"]
@@ -42,6 +47,16 @@ commands.allow = ["get_backend_status"]
 identifier = "allow-start-backend"
 description = "Allows starting the backend sidecar on demand without restarting the desktop app."
 commands.allow = ["start_backend"]
+
+[[permission]]
+identifier = "allow-restart-backend"
+description = "Allows killing and respawning the backend sidecar on demand without restarting the desktop app."
+commands.allow = ["restart_backend"]
+
+[[permission]]
+identifier = "allow-stop-backend"
+description = "Allows stopping the running backend sidecar on demand without uninstalling it."
+commands.allow = ["stop_backend"]
 
 [[permission]]
 identifier = "allow-uninstall-backend"
@@ -74,8 +89,11 @@ permissions = [
   "allow-close-splashscreen",
   "allow-check-backend-update",
   "allow-install-backend-update",
+  "allow-cancel-backend-update",
   "allow-get-backend-status",
   "allow-start-backend",
+  "allow-restart-backend",
+  "allow-stop-backend",
   "allow-uninstall-backend",
   "allow-get-tunnel-status",
   "allow-check-tunnel-update",
