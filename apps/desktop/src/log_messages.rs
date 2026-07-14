@@ -23,6 +23,7 @@ pub enum LogMessage {
     BackendReleaseFetchFailed(String),
     BackendDownloadFailed(String),
     BackendReplaceFailed(String),
+    BackendReplaceRetrying(u32, String),
     BackendUpdateInstalled(String, String),
     BackendDataDirResolveFailed,
     BackendUninstallFailed(String),
@@ -122,6 +123,9 @@ impl LogMessage {
             }
             LogMessage::BackendReplaceFailed(reason) => {
                 format!("[BACKEND_MANAGER] Failed to replace backend binary on disk: {reason}")
+            }
+            LogMessage::BackendReplaceRetrying(attempt, reason) => {
+                format!("[BACKEND_MANAGER] Backend binary still locked by the OS after exit, retrying rename (attempt {attempt}): {reason}")
             }
             LogMessage::BackendUpdateInstalled(from, to) => {
                 format!("[BACKEND_MANAGER] Backend updated from {from} to {to} and restarted")

@@ -7,15 +7,28 @@ import { useCameraStream } from '../hooks/useCameraStream';
 import { useWebRtc } from '../hooks/useWebRTC';
 import { useDeepLinkPairing } from '../hooks/useDeepLinkPairing';
 import { useLocalConnectionConfig } from '../hooks/useLocalConnectionConfig';
+import { useLocalDevMode } from '../hooks/useLocalDevMode';
 import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
 import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
+import { resolveMobileSections, type NavSectionId } from '../lib/navigation';
+import { AppShell } from '../components/AppShell';
 import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
-import { ConnectionModeSettings } from '../components/ConnectionModeSettings';
 import { UpdatesTab } from '../components/UpdatesTab';
+import { ConsolePanel } from '../components/ConsolePanel';
+import { AboutPanel } from '../components/AboutPanel';
 import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
+
+// TODO-ARCH: connection.mode (STUN/TURN/relay) is still read from device-local storage via
+// useLocalConnectionConfig instead of being handed to the phone by Desktop during pairing.
+// The spec now wants Settings hidden entirely on mobile and this exchanged automatically over
+// the QR/code pairing handshake instead, which means extending SignalingPayload plus the
+// pairing REST response in apps/server to carry ConnectionConfig, and having useDeepLinkPairing
+// and PairingCodeEntry store what Desktop sends. That is a signaling protocol change, not a UI
+// change, so flagging for Architect rather than doing it unilaterally in this pass. Until then
+// this hook keeps using whatever was last saved locally (defaults to stun_p2p).
 
 function useWakeLock(): void {
   useEffect(() => {
@@ -137,25 +150,57 @@ export function StreamingView({
   );
 }
 
-type HostSettingsTab = 'connection' | 'updates';
+function useAnyMobileUpdateReady(): boolean {
+  const { status } = useAndroidUpdater();
+  return status === 'ready';
+}
+
+function IdleHostShell({ onPaired }: { onPaired: (pairing: PairingFromUrl) => void }) {
+  const [activeSection, setActiveSection] = useState<NavSectionId>('connect');
+  const { isDevModeEnabled, setDevModeEnabled, isLoaded } = useLocalDevMode();
+  const hasUpdateBadge = useAnyMobileUpdateReady();
+  const sections = resolveMobileSections(isDevModeEnabled);
+
+  const openUpdatesSection = useCallback(() => {
+    setActiveSection('updates');
+  }, []);
+
+  function renderActiveSection() {
+    if (activeSection === 'connect') return <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={onPaired} />;
+    if (activeSection === 'updates') return <UpdatesTab />;
+    if (activeSection === 'console') return <ConsolePanel />;
+    return (
+      <AboutPanel
+        isDevModeEnabled={isLoaded ? isDevModeEnabled : false}
+        onDevModeChange={setDevModeEnabled}
+      />
+    );
+  }
+
+  return (
+    <AppShell
+      layout="tabbar"
+      sections={sections}
+      activeSection={activeSection}
+      onSelectSection={setActiveSection}
+      hasUpdateBadge={hasUpdateBadge}
+    >
+      {renderActiveSection()}
+      <UpdateNotificationBanner onOpenUpdates={openUpdatesSection} />
+    </AppShell>
+  );
+}
 
 export function Host() {
   const { pairing: deepLinkPairing, reset: resetDeepLinkPairing } = useDeepLinkPairing();
   const [manualPairing, setManualPairing] = useState<PairingFromUrl | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<HostSettingsTab>('connection');
-  const { connection, saveConnection, isLoaded } = useLocalConnectionConfig();
+  const { connection, isLoaded } = useLocalConnectionConfig();
   const pairing = deepLinkPairing ?? manualPairing;
 
   const handleExit = useCallback(() => {
     resetDeepLinkPairing();
     setManualPairing(null);
   }, [resetDeepLinkPairing]);
-
-  const openUpdatesTab = useCallback(() => {
-    setSettingsTab('updates');
-    setShowSettings(true);
-  }, []);
 
   if (!isLoaded) {
     return (
@@ -169,25 +214,5 @@ export function Host() {
     return <StreamingView pairing={pairing} connection={connection} onExit={handleExit} />;
   }
 
-  return (
-    <>
-      <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setManualPairing} />
-      <div className="fixed bottom-4 right-4 z-10 flex flex-col items-end gap-2">
-        <button
-          onClick={() => {
-            setSettingsTab('connection');
-            setShowSettings((value) => !value);
-          }}
-          className="text-sm text-velo-indigo underline"
-        >
-          Settings
-        </button>
-        {showSettings && settingsTab === 'connection' && (
-          <ConnectionModeSettings connection={connection} onChange={saveConnection} />
-        )}
-        {showSettings && settingsTab === 'updates' && <UpdatesTab />}
-      </div>
-      <UpdateNotificationBanner onOpenUpdates={openUpdatesTab} />
-    </>
-  );
+  return <IdleHostShell onPaired={setManualPairing} />;
 }

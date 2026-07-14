@@ -11,6 +11,8 @@ const GITHUB_API_ACCEPT_HEADER: &str = "application/vnd.github+json";
 const GITHUB_USER_AGENT: &str = "velo-desktop-backend-manager";
 const BACKEND_TAG_PREFIX: &str = "backend-v";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const BACKEND_REPLACE_MAX_ATTEMPTS: u32 = 5;
+const BACKEND_REPLACE_RETRY_BASE_DELAY_MS: u64 = 200;
 
 pub struct BackendState(pub Mutex<Option<Child>>);
 
@@ -265,12 +267,27 @@ async fn download_backend_binary(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes.to_vec())
 }
 
+fn rename_with_retry(temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(), String> {
+    let mut last_error = String::new();
+    for attempt in 1..=BACKEND_REPLACE_MAX_ATTEMPTS {
+        match std::fs::rename(temp_path, writable_path) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = error.to_string();
+                println!("{}", LogMessage::BackendReplaceRetrying(attempt, last_error.clone()).text());
+                let delay = BACKEND_REPLACE_RETRY_BASE_DELAY_MS * attempt as u64;
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+        }
+    }
+    Err(LogMessage::BackendReplaceFailed(last_error).text())
+}
+
 fn replace_backend_binary_on_disk(writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, new_binary)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
-    std::fs::rename(&temp_path, writable_path)
-        .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())
+    rename_with_retry(&temp_path, writable_path)
 }
 
 #[tauri::command]

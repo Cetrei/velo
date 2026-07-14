@@ -7,11 +7,14 @@ import { useUpdater } from '../hooks/useUpdater';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { useSignalingUrl } from '../hooks/useSignalingUrl';
 import { buildPairingUrl, createPairing } from '../lib/pairing';
+import { resolveDesktopSections, type NavSectionId } from '../lib/navigation';
+import { AppShell } from '../components/AppShell';
 import { SettingsPanel } from '../components/SettingsPanel';
+import { UpdatesTab } from '../components/UpdatesTab';
+import { ConsolePanel } from '../components/ConsolePanel';
+import { AboutPanel } from '../components/AboutPanel';
 import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
-import { DevStageLogPanel } from '../components/DevStageLogPanel';
-import type { SettingsTabId } from '../components/SettingsTabs';
 
 interface PairingState {
   roomId: string;
@@ -93,19 +96,25 @@ function PairingReadyPanel({
   );
 }
 
+function useAnyDesktopUpdateReady(): boolean {
+  const desktopUpdater = useUpdater();
+  const backendUpdater = useBackendUpdater();
+  return desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
+}
+
 export function Viewer() {
   const signalingUrl = useSignalingUrl();
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('user');
+  const [activeSection, setActiveSection] = useState<NavSectionId>('connect');
   const { pairing, error, isGenerating, generate, clear } = usePairingSession(signalingUrl);
   const { config } = useConfig();
   const devModeEnabled = config?.behavior.dev_mode_enabled ?? false;
   const { runCheck: runDesktopUpdateCheck } = useUpdater();
   const { runCheck: runBackendUpdateCheck } = useBackendUpdater();
+  const hasUpdateBadge = useAnyDesktopUpdateReady();
+  const sections = resolveDesktopSections(devModeEnabled);
 
-  const openUpdatesTab = useCallback(() => {
-    setSettingsTab('updates');
-    setShowSettings(true);
+  const openUpdatesSection = useCallback(() => {
+    setActiveSection('updates');
   }, []);
 
   const pairingUrl = useMemo(() => {
@@ -144,24 +153,24 @@ export function Viewer() {
     clear();
   }, [disconnect, clear]);
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-velo-background text-velo-text-primary">
-      {error && <p className="text-sm text-velo-coral">{error}</p>}
-      {!pairing && !isConnected && !error && (
-        <StartPairingPrompt onStart={generate} isGenerating={isGenerating} />
-      )}
-      {pairing && pairingUrl && !isConnected && (
-        <PairingReadyPanel
-          pairingUrl={pairingUrl}
-          otp={pairing.otp}
-          onRegenerate={generate}
-          isGenerating={isGenerating}
-        />
-      )}
-      {isConnected && (
-        <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl rounded-2xl" />
-      )}
-      <div className="flex items-center gap-3">
+  function renderConnectSection() {
+    return (
+      <>
+        {error && <p className="text-sm text-velo-coral">{error}</p>}
+        {!pairing && !isConnected && !error && (
+          <StartPairingPrompt onStart={generate} isGenerating={isGenerating} />
+        )}
+        {pairing && pairingUrl && !isConnected && (
+          <PairingReadyPanel
+            pairingUrl={pairingUrl}
+            otp={pairing.otp}
+            onRegenerate={generate}
+            isGenerating={isGenerating}
+          />
+        )}
+        {isConnected && (
+          <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl rounded-2xl" />
+        )}
         {pairing && (
           <ConnectionStatusPanel
             connectionState={connectionState}
@@ -171,16 +180,28 @@ export function Viewer() {
             onDisconnect={handleDisconnect}
           />
         )}
-        <button
-          onClick={() => setShowSettings((value) => !value)}
-          className="text-sm text-velo-indigo underline"
-        >
-          Settings
-        </button>
-      </div>
-      {showSettings && <SettingsPanel initialTab={settingsTab} />}
-      <DevStageLogPanel isEnabled={devModeEnabled} />
-      <UpdateNotificationBanner onOpenUpdates={openUpdatesTab} />
-    </main>
+      </>
+    );
+  }
+
+  function renderActiveSection() {
+    if (activeSection === 'connect') return renderConnectSection();
+    if (activeSection === 'settings') return <SettingsPanel />;
+    if (activeSection === 'updates') return <UpdatesTab />;
+    if (activeSection === 'console') return <ConsolePanel />;
+    return <AboutPanel />;
+  }
+
+  return (
+    <AppShell
+      layout="sidebar"
+      sections={sections}
+      activeSection={activeSection}
+      onSelectSection={setActiveSection}
+      hasUpdateBadge={hasUpdateBadge}
+    >
+      {renderActiveSection()}
+      <UpdateNotificationBanner onOpenUpdates={openUpdatesSection} />
+    </AppShell>
   );
 }

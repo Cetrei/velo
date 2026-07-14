@@ -1,7 +1,6 @@
 import { useConfig, type UserConfig } from '../hooks/useConfig';
 import { ConnectionModeSettings } from './ConnectionModeSettings';
 import { SettingsTabs, type SettingsTabId } from './SettingsTabs';
-import { UpdatesTab } from './UpdatesTab';
 
 interface SettingsPanelProps {
   initialTab?: SettingsTabId;
@@ -241,7 +240,6 @@ export function SettingsPanel({ initialTab }: SettingsPanelProps) {
       isSystemTabVisible={config.behavior.dev_mode_enabled}
       initialTab={initialTab}
       renderUserTab={() => <UserTab config={config} saveConfig={saveConfig} />}
-      renderUpdatesTab={() => <UpdatesTab />}
       renderSystemTab={() => <DeveloperSettingsTab config={config} saveConfig={saveConfig} />}
     />
   );

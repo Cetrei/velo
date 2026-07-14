@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 
-export type SettingsTabId = 'user' | 'updates' | 'system';
+export type SettingsTabId = 'user' | 'system';
 
 interface SettingsTabDefinition {
   id: SettingsTabId;
@@ -11,27 +11,21 @@ interface SettingsTabsProps {
   isSystemTabVisible: boolean;
   initialTab?: SettingsTabId;
   renderUserTab: () => ReactNode;
-  renderUpdatesTab: () => ReactNode;
   renderSystemTab: () => ReactNode;
 }
 
-const BASE_TABS: SettingsTabDefinition[] = [
-  { id: 'user', label: 'User' },
-  { id: 'updates', label: 'Updates' },
-];
-
+const USER_TAB: SettingsTabDefinition = { id: 'user', label: 'User' };
 const SYSTEM_TAB: SettingsTabDefinition = { id: 'system', label: 'System' };
 
 function resolveVisibleTabs(isSystemTabVisible: boolean): SettingsTabDefinition[] {
-  if (!isSystemTabVisible) return BASE_TABS;
-  return [...BASE_TABS, SYSTEM_TAB];
+  if (!isSystemTabVisible) return [USER_TAB];
+  return [USER_TAB, SYSTEM_TAB];
 }
 
 export function SettingsTabs({
   isSystemTabVisible,
   initialTab = 'user',
   renderUserTab,
-  renderUpdatesTab,
   renderSystemTab,
 }: SettingsTabsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab);
@@ -39,8 +33,11 @@ export function SettingsTabs({
 
   function renderActiveTabContent(): ReactNode {
     if (activeTab === 'user') return renderUserTab();
-    if (activeTab === 'updates') return renderUpdatesTab();
     return renderSystemTab();
+  }
+
+  if (visibleTabs.length === 1) {
+    return <div className="flex flex-col gap-3 rounded-2xl bg-velo-surface p-4">{renderUserTab()}</div>;
   }
 
   return (
