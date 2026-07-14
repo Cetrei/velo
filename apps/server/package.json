@@ -10,7 +10,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "compile": "bun build ./src/index.ts --compile --define VELO_BACKEND_VERSION=\"'$npm_package_version'\" --outfile ../../bin/backend/velo-backend.exe --target=bun-windows-x64"
+    "compile": "bun build ./src/index.ts --compile --define VELO_BACKEND_VERSION=\"\\\"$npm_package_version\\\"\" --outfile ../../bin/backend/velo-backend.exe --target=bun-windows-x64"
   },
 
   "dependencies": {
