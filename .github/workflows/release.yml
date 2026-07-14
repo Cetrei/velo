@@ -36,7 +36,7 @@ jobs:
           fi
           git add apps/desktop/tauri.conf.json apps/web/android/variables.gradle apps/server/package.json
           git commit -m "chore: sync version to ${{ github.ref_name }} [skip ci]"
-          git push origin HEAD:main
+          git push origin HEAD:refs/heads/main
 
   desktop:
     if: ${{ !startsWith(github.ref_name, 'backend-v') }}
