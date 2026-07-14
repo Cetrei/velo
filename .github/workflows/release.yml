@@ -135,3 +135,46 @@ jobs:
           draft: true
           tag_name: ${{ github.ref_name }}
           files: bin/android/*.apk
+
+  backend:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Cache root Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-root-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-root-
+
+      - name: Install root dependencies
+        run: bun install
+
+      - name: Cache server Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            apps/server/node_modules
+          key: ${{ runner.os }}-bun-server-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-server-
+
+      - name: Compile backend binary
+        run: bun run build:server
+
+      - name: Publish backend release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          files: bin/backend/*.exe
+

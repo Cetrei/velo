@@ -15,7 +15,7 @@
 
     "build:desktop": "bun run build:desktop:tauri && bun scripts/collect-desktop-artifact.mjs",
     "build:android": "bun scripts/run-gradle-task.ts assembleRelease && bun scripts/collect-android-artifact.mjs",
-    "build:server": "docker compose build --no-cache",
+    "build:server": "bun --filter server compile",
     "build:all": "bun run build:desktop && bun run build:android && bun run build:server",
     "sync:version": "bun scripts/sync-version.ts",
 
@@ -29,16 +29,14 @@
     "release": "bun run verify:release && bun scripts/release.ts",
 
     "deploy:web": "cd apps/web && bun run deploy",
-    "deploy:server": "docker compose up -d",
-    "deploy:all": "bun run deploy:web && bun run deploy:server",
+    "deploy:all": "bun run deploy:web",
 
     "install:root": "bun install",
     "install:server": "cd apps/server && bun install",
     "install:web": "cd apps/web && bun install",
     "install:rust": "cargo fetch --manifest-path apps/desktop/Cargo.toml && cargo fetch --manifest-path crates/vcam-driver/Cargo.toml",
     "install:android": "cd apps/web && npx cap sync",
-    "install:docker": "docker compose build",
-    "install:all": "bun run install:root && bun run install:server && bun run install:web && bun run install:rust && bun run install:android && bun run install:docker"
+    "install:all": "bun run install:root && bun run install:server && bun run install:web && bun run install:rust && bun run install:android"
   },
   "workspaces": [
     "apps/web",

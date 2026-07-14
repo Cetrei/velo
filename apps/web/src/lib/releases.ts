@@ -1,5 +1,8 @@
-const GITHUB_REPO = 'Cetrei/velo';
-const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
+const GITHUB_RELEASES_API_BASE = 'https://api.github.com/repos';
+
+function buildReleasesApiUrl(repo: string): string {
+  return `${GITHUB_RELEASES_API_BASE}/${repo}/releases`;
+}
 
 export interface ReleaseAsset {
   name: string;
@@ -56,8 +59,8 @@ function toVeloRelease(raw: GithubRelease): VeloRelease {
   };
 }
 
-export async function fetchPublishedReleases(): Promise<VeloRelease[]> {
-  const response = await fetch(`${GITHUB_RELEASES_API}?per_page=100`, {
+export async function fetchPublishedReleases(repo: string): Promise<VeloRelease[]> {
+  const response = await fetch(`${buildReleasesApiUrl(repo)}?per_page=100`, {
     headers: { Accept: 'application/vnd.github+json' },
   });
   if (!response.ok) {

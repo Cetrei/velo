@@ -8,10 +8,15 @@ import type {
   RoomSyncPayload,
   JoinRejectedPayload,
   NegotiationStage,
+  ConnectionConfig,
+  RelayFrameMetadata,
 } from 'shared-types';
-import { createSignalingSocket, loadSystemConfig, loadUserConfig } from '../lib/signaling-client';
+import { createSignalingSocket, loadIceServers, loadUserConfig } from '../lib/signaling-client';
 import { getDeviceName } from '../lib/device-identity';
 import { generateSessionId } from '../lib/session-id';
+import { captureJpegFrame, drawJpegFrameToCanvas } from '../lib/frame-relay';
+
+const RELAY_FRAME_INTERVAL_MS = 1000 / 30;
 
 export type WebRtcStage = NegotiationStage;
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -45,6 +50,8 @@ interface UseWebRtcOptions {
   isInitiator: boolean;
   localStream?: MediaStream | null;
   readyToJoin?: boolean;
+  connectionMode?: ConnectionConfig['mode'];
+  connectionConfig?: ConnectionConfig;
 }
 
 type StageListener = (stage: WebRtcStage, detail?: string) => void;
@@ -54,7 +61,7 @@ type RemotePeerListener = (peer: RemotePeerInfo | null) => void;
 interface ConnectionHandle {
   sessionId: string;
   socket: Socket;
-  peer: RTCPeerConnection;
+  peer: RTCPeerConnection | null;
   stageListeners: Set<StageListener>;
   streamListeners: Set<RemoteStreamListener>;
   peerListeners: Set<RemotePeerListener>;
@@ -65,6 +72,7 @@ interface ConnectionHandle {
   hasSentOffer: boolean;
   waitingForPeerTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  relayFrameTimer: ReturnType<typeof setInterval> | null;
   teardown: () => void;
 }
 
@@ -224,6 +232,57 @@ async function handleIncomingSignal(
   }
 }
 
+function mergeUserTurnServer(iceServers: RTCIceServer[], connectionConfig: ConnectionConfig | undefined): RTCIceServer[] {
+  const userTurn = connectionConfig?.stun_p2p.turn;
+  if (!userTurn || !userTurn.url) return iceServers;
+
+  return [...iceServers, { urls: userTurn.url, username: userTurn.username, credential: userTurn.credential }];
+}
+
+function startRelayFrameLoop(
+  handle: ConnectionHandle,
+  socket: Socket,
+  roomId: string,
+  localStream: MediaStream | null | undefined,
+): void {
+  if (!localStream) return;
+
+  const sourceVideo = document.createElement('video');
+  sourceVideo.srcObject = localStream;
+  sourceVideo.muted = true;
+  sourceVideo.play().catch(() => {});
+
+  const captureCanvas = document.createElement('canvas');
+
+  handle.relayFrameTimer = setInterval(() => {
+    captureJpegFrame(sourceVideo, captureCanvas)
+      .then((frame) => {
+        if (!frame) return;
+        const metadata: RelayFrameMetadata = { roomId, width: frame.width, height: frame.height };
+        socket.emit('relay-frame', metadata, frame.bytes);
+      })
+      .catch(() => {});
+  }, RELAY_FRAME_INTERVAL_MS);
+}
+
+function attachRelayFrameReceiver(handle: ConnectionHandle, socket: Socket, roomId: string): void {
+  const receiveCanvas = document.createElement('canvas');
+  let syntheticStream: MediaStream | null = null;
+
+  socket.on('relay-frame', (metadata: RelayFrameMetadata, bytes: ArrayBuffer) => {
+    if (metadata.roomId !== roomId) return;
+
+    drawJpegFrameToCanvas(receiveCanvas, bytes)
+      .then(() => {
+        if (!syntheticStream) {
+          syntheticStream = receiveCanvas.captureStream(30);
+          setHandleRemoteStream(handle, syntheticStream);
+        }
+      })
+      .catch(() => {});
+  });
+}
+
 function describeJoinRejection(reason: JoinRejectedPayload['reason']): string {
   switch (reason) {
     case 'otp_invalid':
@@ -248,13 +307,15 @@ function createConnection(
   role: PeerRole,
   isInitiator: boolean,
   localStream: MediaStream | null | undefined,
+  connectionMode: ConnectionConfig['mode'],
+  connectionConfig: ConnectionConfig | undefined,
 ): ConnectionHandle {
   let isTornDown = false;
 
   const handle: ConnectionHandle = {
     sessionId,
     socket: null as unknown as Socket,
-    peer: null as unknown as RTCPeerConnection,
+    peer: null,
     stageListeners: new Set(),
     streamListeners: new Set(),
     peerListeners: new Set(),
@@ -265,6 +326,7 @@ function createConnection(
     hasSentOffer: false,
     waitingForPeerTimer: null,
     reconnectTimer: null,
+    relayFrameTimer: null,
     teardown: () => {},
   };
 
@@ -274,28 +336,29 @@ function createConnection(
   }
 
   function teardownActiveSocketAndPeer(): void {
+    if (handle.relayFrameTimer) {
+      clearInterval(handle.relayFrameTimer);
+      handle.relayFrameTimer = null;
+    }
     handle.peer?.close();
     handle.socket?.disconnect();
   }
 
-  async function trySendOfferOnce(peer: RTCPeerConnection, socket: Socket) {
-    if (!isInitiator || handle.hasSentOffer || isTornDown) return;
+  async function trySendOfferOnce(peer: RTCPeerConnection | null, socket: Socket) {
+    if (!peer || !isInitiator || handle.hasSentOffer || isTornDown) return;
     handle.hasSentOffer = true;
     await sendOffer(peer, socket, roomId, role, sessionId);
   }
 
-  async function connect() {
-    teardownActiveSocketAndPeer();
-    stageIfActive('loadingConfig');
-    const [systemConfig, userConfig] = await Promise.all([loadSystemConfig(signalingUrl), loadUserConfig(signalingUrl)]);
-    if (isTornDown) return;
+  function markConnectedInRelayModeIfPeerPresent(): void {
+    if (connectionMode !== 'cloudflare_relay' || isTornDown) return;
+    clearWaitingForPeerTimer(handle);
+    stageIfActive('connected');
+  }
 
-    stageIfActive('connectingSocket');
-    const socket = createSignalingSocket(signalingUrl);
-    handle.socket = socket;
-    const peer = new RTCPeerConnection({ iceServers: systemConfig.ice_servers });
+  function setUpPeerConnectionTransport(socket: Socket, iceServers: RTCIceServer[], userConfig: { enable_reconnection_loop: boolean; reconnection_interval_ms: number }): RTCPeerConnection {
+    const peer = new RTCPeerConnection({ iceServers: mergeUserTurnServer(iceServers, connectionConfig) });
     handle.peer = peer;
-    handle.hasSentOffer = false;
 
     localStream?.getTracks().forEach((track) => peer.addTrack(track, localStream));
     attachIceHandler(peer, socket, roomId);
@@ -328,6 +391,40 @@ function createConnection(
       }
     };
 
+    socket.on('signal', (payload: SignalingPayload) => {
+      handleIncomingSignal(peer, socket, roomId, role, sessionId, payload).catch((signalError) => {
+        logWarn(role, roomId, sessionId, `failed to handle incoming signal (${payload.type}): ${String(signalError)}`);
+      });
+    });
+
+    return peer;
+  }
+
+  function setUpRelayTransport(socket: Socket): void {
+    handle.peer = null;
+    attachRelayFrameReceiver(handle, socket, roomId);
+    if (isInitiator) {
+      startRelayFrameLoop(handle, socket, roomId, localStream);
+    }
+  }
+
+  async function connect() {
+    teardownActiveSocketAndPeer();
+    stageIfActive('loadingConfig');
+    const [iceServers, userConfig] = await Promise.all([loadIceServers(signalingUrl), loadUserConfig(signalingUrl)]);
+    if (isTornDown) return;
+
+    stageIfActive('connectingSocket');
+    const socket = createSignalingSocket(signalingUrl);
+    handle.socket = socket;
+    handle.hasSentOffer = false;
+
+    const isRelayMode = connectionMode === 'cloudflare_relay';
+    const peer = isRelayMode ? null : setUpPeerConnectionTransport(socket, iceServers, userConfig);
+    if (isRelayMode) {
+      setUpRelayTransport(socket);
+    }
+
     socket.on('connect_error', (connectError) => {
       logWarn(role, roomId, sessionId, `socket connect_error: ${connectError.message}`);
       stageIfActive('socketError', connectError.message);
@@ -351,6 +448,7 @@ function createConnection(
         trySendOfferOnce(peer, socket).catch((offerError) => {
           logWarn(role, roomId, sessionId, `failed to send offer after room-sync: ${String(offerError)}`);
         });
+        markConnectedInRelayModeIfPeerPresent();
       } else if (handle.currentStage !== 'connected' && handle.currentStage !== 'negotiating') {
         stageIfActive('waitingForPeer');
       }
@@ -365,6 +463,7 @@ function createConnection(
       trySendOfferOnce(peer, socket).catch((offerError) => {
         logWarn(role, roomId, sessionId, `failed to send offer after peer join: ${String(offerError)}`);
       });
+      markConnectedInRelayModeIfPeerPresent();
     });
     socket.on('peer-left', (payload: { roomId: string; peerId: string }) => {
       if (payload.roomId !== roomId) return;
@@ -375,11 +474,6 @@ function createConnection(
       if (payload.roomId !== roomId) return;
       setHandleRemotePeer(handle, null);
       stageIfActive('peerLeft', 'remote disconnected explicitly');
-    });
-    socket.on('signal', (payload: SignalingPayload) => {
-      handleIncomingSignal(peer, socket, roomId, role, sessionId, payload).catch((signalError) => {
-        logWarn(role, roomId, sessionId, `failed to handle incoming signal (${payload.type}): ${String(signalError)}`);
-      });
     });
 
     stageIfActive('joiningRoom');
@@ -411,7 +505,17 @@ function createConnection(
   return handle;
 }
 
-export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin = true }: UseWebRtcOptions) {
+export function useWebRtc({
+  signalingUrl,
+  roomId,
+  otp,
+  role,
+  isInitiator,
+  localStream,
+  readyToJoin = true,
+  connectionMode = 'stun_p2p',
+  connectionConfig,
+}: UseWebRtcOptions) {
   const [stage, setStage] = useState<WebRtcStage>('idle');
   const [stageDetail, setStageDetail] = useState<string | undefined>(undefined);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -431,7 +535,18 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
 
     if (!handle) {
       const sessionId = generateSessionId();
-      handle = createConnection(key, sessionId, signalingUrlRef.current, roomId, otp, role, isInitiator, localStream);
+      handle = createConnection(
+        key,
+        sessionId,
+        signalingUrlRef.current,
+        roomId,
+        otp,
+        role,
+        isInitiator,
+        localStream,
+        connectionMode,
+        connectionConfig,
+      );
       activeConnections.set(key, handle);
     }
 
@@ -470,7 +585,7 @@ export function useWebRtc({ signalingUrl, roomId, otp, role, isInitiator, localS
         void teardownTimer;
       }
     };
-  }, [signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin]);
+  }, [signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin, connectionMode, connectionConfig]);
 
   function disconnect() {
     const handle = handleRef.current;

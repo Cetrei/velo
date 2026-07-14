@@ -2,6 +2,16 @@ export interface IceServerConfig {
   urls: string;
 }
 
+export interface TurnRelayConfig {
+  realm: string;
+  port: number;
+  tls_port: number;
+}
+
+export interface ReleasesSourceConfig {
+  repo: string;
+}
+
 export interface SystemConfig {
   version: string;
   network: {
@@ -9,6 +19,8 @@ export interface SystemConfig {
     /** Only consumed by apps/web's vite.config.ts for the local dev server port. Not read at runtime in production; apps/web is deployed statically to Cloudflare Pages, which ignores this. */
     web_server_port: number;
     ice_servers: IceServerConfig[];
+    /** Non-secret TURN relay coordinates. The actual credential is never stored here: it is minted per-request by apps/server from TURN_STATIC_AUTH_SECRET (env-only) and expires after a short TTL. Absent when no TURN relay is deployed yet, in which case the app falls back to STUN-only. */
+    turn?: TurnRelayConfig;
   };
   webrtc: {
     sdp_semantics: string;
@@ -24,6 +36,28 @@ export interface SystemConfig {
     level: string;
     format: string;
   };
+  /** Where the Desktop updater and the Android in-app updater look for new releases. GitHub Releases remains the true source of version metadata and binaries, even though apps/web itself is deployed to Cloudflare Pages. Defaults to the Velo repo if config/system.yml omits this block, since older configs predate this field. */
+  releases?: ReleasesSourceConfig;
+}
+
+export type ConnectionMode = 'stun_p2p' | 'cloudflare_relay' | 'usb';
+
+export interface StunP2pConnectionConfig {
+  turn?: {
+    url: string;
+    username: string;
+    credential: string;
+  };
+}
+
+export interface CloudflareRelayConnectionConfig {
+  tunnel_token: string;
+}
+
+export interface ConnectionConfig {
+  mode: ConnectionMode;
+  stun_p2p: StunP2pConnectionConfig;
+  cloudflare_relay: CloudflareRelayConnectionConfig;
 }
 
 export interface UserConfig {
@@ -44,6 +78,7 @@ export interface UserConfig {
     wake_lock_level: string;
     show_notification: boolean;
   };
+  connection: ConnectionConfig;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,12 +98,31 @@ function validateIceServers(value: unknown, fieldPath: string): asserts value is
   }
 }
 
+function validateTurn(turn: unknown, fieldPath: string): asserts turn is TurnRelayConfig {
+  assertField(isRecord(turn), fieldPath);
+  const record = turn as Record<string, unknown>;
+  assertField(typeof record.realm === 'string', `${fieldPath}.realm`);
+  assertField(typeof record.port === 'number', `${fieldPath}.port`);
+  assertField(typeof record.tls_port === 'number', `${fieldPath}.tls_port`);
+}
+
+const DEFAULT_RELEASES_REPO = 'Cetrei/velo';
+
+function validateReleases(releases: unknown, fieldPath: string): asserts releases is ReleasesSourceConfig {
+  assertField(isRecord(releases), fieldPath);
+  const record = releases as Record<string, unknown>;
+  assertField(typeof record.repo === 'string' && record.repo.length > 0, `${fieldPath}.repo`);
+}
+
 function validateNetwork(network: unknown): asserts network is SystemConfig['network'] {
   assertField(isRecord(network), 'network');
   const record = network as Record<string, unknown>;
   assertField(typeof record.signaling_port === 'number', 'network.signaling_port');
   assertField(typeof record.web_server_port === 'number', 'network.web_server_port');
   validateIceServers(record.ice_servers, 'network.ice_servers');
+  if (record.turn !== undefined) {
+    validateTurn(record.turn, 'network.turn');
+  }
 }
 
 function validateWebrtc(webrtc: unknown): asserts webrtc is SystemConfig['webrtc'] {
@@ -102,7 +156,11 @@ export function validateSystemConfig(value: unknown): SystemConfig {
   validateWebrtc(record.webrtc);
   validateDriver(record.driver);
   validateLogging(record.logging);
-  return record as unknown as SystemConfig;
+  if (record.releases !== undefined) {
+    validateReleases(record.releases, 'releases');
+    return { ...record, releases: record.releases } as unknown as SystemConfig;
+  }
+  return { ...record, releases: { repo: DEFAULT_RELEASES_REPO } } as unknown as SystemConfig;
 }
 
 function validateResolution(resolution: unknown): asserts resolution is { width: number; height: number } {
@@ -138,11 +196,39 @@ function validateAndroid(android: unknown): asserts android is UserConfig['andro
   assertField(typeof record.show_notification === 'boolean', 'android.show_notification');
 }
 
+const CONNECTION_MODES: ConnectionMode[] = ['stun_p2p', 'cloudflare_relay', 'usb'];
+
+function validateStunP2p(stunP2p: unknown, fieldPath: string): asserts stunP2p is StunP2pConnectionConfig {
+  assertField(isRecord(stunP2p), fieldPath);
+  const record = stunP2p as Record<string, unknown>;
+  if (record.turn === undefined) return;
+  assertField(isRecord(record.turn), `${fieldPath}.turn`);
+  const turn = record.turn as Record<string, unknown>;
+  assertField(typeof turn.url === 'string', `${fieldPath}.turn.url`);
+  assertField(typeof turn.username === 'string', `${fieldPath}.turn.username`);
+  assertField(typeof turn.credential === 'string', `${fieldPath}.turn.credential`);
+}
+
+function validateCloudflareRelay(cloudflareRelay: unknown, fieldPath: string): asserts cloudflareRelay is CloudflareRelayConnectionConfig {
+  assertField(isRecord(cloudflareRelay), fieldPath);
+  const record = cloudflareRelay as Record<string, unknown>;
+  assertField(typeof record.tunnel_token === 'string', `${fieldPath}.tunnel_token`);
+}
+
+function validateConnection(connection: unknown): asserts connection is ConnectionConfig {
+  assertField(isRecord(connection), 'connection');
+  const record = connection as Record<string, unknown>;
+  assertField(typeof record.mode === 'string' && CONNECTION_MODES.includes(record.mode as ConnectionMode), 'connection.mode');
+  validateStunP2p(record.stun_p2p, 'connection.stun_p2p');
+  validateCloudflareRelay(record.cloudflare_relay, 'connection.cloudflare_relay');
+}
+
 export function validateUserConfig(value: unknown): UserConfig {
   assertField(isRecord(value), 'root');
   const record = value as Record<string, unknown>;
   validateVideo(record.video);
   validateBehavior(record.behavior);
   validateAndroid(record.android);
+  validateConnection(record.connection);
   return record as unknown as UserConfig;
 }

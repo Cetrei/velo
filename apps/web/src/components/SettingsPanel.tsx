@@ -1,4 +1,5 @@
 import { useConfig } from '../hooks/useConfig';
+import { ConnectionModeSettings } from './ConnectionModeSettings';
 
 export function SettingsPanel() {
   const { config, error, saveConfig } = useConfig();
@@ -50,6 +51,10 @@ export function SettingsPanel() {
           }
         />
       </label>
+      <ConnectionModeSettings
+        connection={config.connection}
+        onChange={(connection) => saveConfig({ ...config, connection })}
+      />
     </div>
   );
 }

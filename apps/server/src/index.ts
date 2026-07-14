@@ -18,7 +18,7 @@ const HTTP_RATE_LIMIT_MAX_REQUESTS = 60;
 const systemConfig = readSystemConfig();
 const app = express();
 
-// Trusts exactly one hop (the Cloudflare Tunnel container on the same Docker network),
+// Trusts exactly one hop (the Cloudflare Tunnel process running alongside this backend),
 // so express-rate-limit reads the real client IP from X-Forwarded-For instead of throwing
 // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR or mis-attributing every request to the tunnel's IP.
 app.set('trust proxy', 1);
@@ -38,9 +38,11 @@ registerConfigRoutes(app, systemConfig, readUserConfig);
 registerPairingRoutes(app);
 
 const httpServer = createServer(app);
+const RELAY_FRAME_MAX_BYTES = 512 * 1024;
+
 const io = new Server(httpServer, {
   cors: { origin: ALLOWED_ORIGIN },
-  maxHttpBufferSize: 32 * 1024,
+  maxHttpBufferSize: RELAY_FRAME_MAX_BYTES,
 });
 registerStatusRoute(app, systemConfig);
 

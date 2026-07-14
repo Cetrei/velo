@@ -106,6 +106,8 @@ export function Viewer() {
     otp: pairing?.otp ?? '',
     role: 'viewer',
     isInitiator: false,
+    connectionMode: config?.connection.mode,
+    connectionConfig: config?.connection,
   });
 
   const videoRef = useRef<HTMLVideoElement>(null);

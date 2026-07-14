@@ -1,10 +1,24 @@
 import { readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { parse } from 'yaml';
 import { validateSystemConfig, validateUserConfig, type SystemConfig, type UserConfig } from 'shared-types';
 import { formatLog, LogMessage } from './log-messages';
 
-const SYSTEM_CONFIG_PATH = '../../config/system.yml';
-const USER_CONFIG_PATH = '../../config/user.yml';
+const DEV_CONFIG_DIR = join('..', '..', 'config');
+
+function isCompiledBinary(): boolean {
+  return !/^bun(\.exe)?$/i.test(basename(process.execPath));
+}
+
+function resolveConfigDir(): string {
+  const override = process.env.VELO_CONFIG_DIR;
+  if (override) return override;
+  if (isCompiledBinary()) return join(dirname(process.execPath), 'config');
+  return DEV_CONFIG_DIR;
+}
+
+const SYSTEM_CONFIG_PATH = join(resolveConfigDir(), 'system.yml');
+const USER_CONFIG_PATH = join(resolveConfigDir(), 'user.yml');
 
 function readYamlFile(path: string): unknown {
   try {

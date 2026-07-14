@@ -48,6 +48,12 @@ export interface DisconnectPayload {
   roomId: string;
 }
 
+export interface RelayFrameMetadata {
+  roomId: string;
+  width: number;
+  height: number;
+}
+
 export type NegotiationStage =
   | 'idle'
   | 'loadingConfig'

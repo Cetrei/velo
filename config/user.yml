@@ -16,3 +16,9 @@ android:
   enable_foreground_service: true
   wake_lock_level: "partial"
   show_notification: true
+
+connection:
+  mode: "stun_p2p"
+  stun_p2p: {}
+  cloudflare_relay:
+    tunnel_token: ""

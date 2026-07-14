@@ -7,6 +7,7 @@ import type {
   RoomSyncPayload,
   RoomPeerSnapshot,
   JoinRejectedPayload,
+  RelayFrameMetadata,
 } from 'shared-types';
 import { formatLog, LogMessage } from './log-messages';
 import {
@@ -52,6 +53,18 @@ function isValidDisconnectPayload(payload: unknown): payload is DisconnectPayloa
   }
   const candidate = payload as Record<string, unknown>;
   return typeof candidate.roomId === 'string';
+}
+
+function isValidRelayFrameMetadata(metadata: unknown): metadata is RelayFrameMetadata {
+  if (typeof metadata !== 'object' || metadata === null) {
+    return false;
+  }
+  const candidate = metadata as Record<string, unknown>;
+  return (
+    typeof candidate.roomId === 'string' &&
+    typeof candidate.width === 'number' &&
+    typeof candidate.height === 'number'
+  );
 }
 
 function isValidSignalingPayload(payload: unknown): payload is SignalingPayload {
@@ -160,6 +173,20 @@ function handleSignal(io: Server, socket: Socket, payload: unknown): void {
   socket.to(payload.roomId).emit('signal', payload);
 }
 
+function handleRelayFrame(socket: Socket, io: Server, metadata: unknown, bytes: unknown): void {
+  if (!isValidRelayFrameMetadata(metadata) || !(bytes instanceof ArrayBuffer)) {
+    return;
+  }
+
+  const room = io.sockets.adapter.rooms.get(metadata.roomId);
+  if (!room || !room.has(socket.id)) {
+    console.warn(formatLog(LogMessage.RelayFrameRejectedNotInRoom, { peerId: socket.id, roomId: metadata.roomId }));
+    return;
+  }
+
+  socket.to(metadata.roomId).emit('relay-frame', metadata, bytes);
+}
+
 function notifyRoomOfLeave(socket: Socket, roomId: string): void {
   const presence: Pick<PeerPresencePayload, 'roomId' | 'peerId'> = { roomId, peerId: socket.id };
   socket.to(roomId).emit('peer-left', presence);
@@ -219,6 +246,7 @@ function handleDisconnectPeer(socket: Socket, payload: unknown): void {
 export function registerSignalingHandlers(io: Server, socket: Socket): void {
   socket.on('join-room', (payload: unknown) => handleJoinRoom(socket, payload));
   socket.on('signal', (payload: unknown) => handleSignal(io, socket, payload));
+  socket.on('relay-frame', (metadata: unknown, bytes: unknown) => handleRelayFrame(socket, io, metadata, bytes));
   socket.on('disconnect-peer', (payload: unknown) => handleDisconnectPeer(socket, payload));
   socket.on('disconnect', () => handleDisconnect(socket));
 }

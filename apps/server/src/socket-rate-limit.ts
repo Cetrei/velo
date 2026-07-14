@@ -3,6 +3,7 @@ import { formatLog, LogMessage } from './log-messages';
 
 const WINDOW_MS = 10_000;
 const MAX_EVENTS_PER_WINDOW = 30;
+const UNTHROTTLED_EVENTS = new Set(['relay-frame']);
 
 interface EventBudget {
   count: number;
@@ -24,6 +25,11 @@ export function attachSocketRateLimiting(socket: Socket): void {
 
   socket.use((packet, next) => {
     const eventName = packet[0] as string;
+    if (UNTHROTTLED_EVENTS.has(eventName)) {
+      next();
+      return;
+    }
+
     const budget = budgets.get(eventName) ?? { count: 0, windowStart: Date.now() };
     budgets.set(eventName, budget);
 

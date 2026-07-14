@@ -13,6 +13,8 @@ export enum LogMessage {
   PairingCreated = 'pairing_created',
   RoomFull = 'room_full',
   RateLimitExceeded = 'rate_limit_exceeded',
+  TurnRelayNotConfigured = 'turn_relay_not_configured',
+  RelayFrameRejectedNotInRoom = 'relay_frame_rejected_not_in_room',
 }
 
 const MESSAGES: Record<LogMessage, string> = {
@@ -30,6 +32,8 @@ const MESSAGES: Record<LogMessage, string> = {
   [LogMessage.PairingCreated]: '[SIGNALING] Pairing OTP created for room {roomId}',
   [LogMessage.RoomFull]: '[SIGNALING] Rejected join for room {roomId}, already at peer capacity',
   [LogMessage.RateLimitExceeded]: '[SIGNALING] Rate limit exceeded for {peerId} on {eventName}',
+  [LogMessage.TurnRelayNotConfigured]: '[SIGNALING] /config/turn-credentials requested but no TURN relay is configured (missing TURN_STATIC_AUTH_SECRET env or config/system.yml network.turn), falling back to STUN-only ICE servers',
+  [LogMessage.RelayFrameRejectedNotInRoom]: '[SIGNALING] Rejected relay-frame from peer {peerId} for room {roomId}: socket is not a member of that room',
 };
 
 export function formatLog(message: LogMessage, params: Record<string, string | number> = {}): string {

@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { ForegroundService } from '@capawesome-team/capacitor-android-foreground-service';
+import type { ConnectionConfig } from 'shared-types';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { useWebRtc } from '../hooks/useWebRTC';
 import { useDeepLinkPairing } from '../hooks/useDeepLinkPairing';
+import { useLocalConnectionConfig } from '../hooks/useLocalConnectionConfig';
 import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
 import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
+import { ConnectionModeSettings } from '../components/ConnectionModeSettings';
+import { AndroidUpdateBanner } from '../components/AndroidUpdateBanner';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
 
@@ -57,7 +61,15 @@ function useForegroundStreamingService(isStreaming: boolean): void {
   }, [isStreaming]);
 }
 
-export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; onExit: () => void }) {
+export function StreamingView({
+  pairing,
+  connection,
+  onExit,
+}: {
+  pairing: PairingFromUrl;
+  connection: ConnectionConfig;
+  onExit: () => void;
+}) {
   const { stream, error } = useCameraStream();
   useWakeLock();
 
@@ -69,6 +81,8 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
     isInitiator: true,
     localStream: stream,
     readyToJoin: stream !== null,
+    connectionMode: connection.mode,
+    connectionConfig: connection,
   });
 
   useForegroundStreamingService(connectionState === 'connected');
@@ -118,6 +132,8 @@ export function StreamingView({ pairing, onExit }: { pairing: PairingFromUrl; on
 export function Host() {
   const { pairing: deepLinkPairing, reset: resetDeepLinkPairing } = useDeepLinkPairing();
   const [manualPairing, setManualPairing] = useState<PairingFromUrl | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const { connection, saveConnection } = useLocalConnectionConfig();
   const pairing = deepLinkPairing ?? manualPairing;
 
   const handleExit = useCallback(() => {
@@ -125,9 +141,20 @@ export function Host() {
     setManualPairing(null);
   }, [resetDeepLinkPairing]);
 
-  if (!pairing) {
-    return <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setManualPairing} />;
+  if (pairing) {
+    return <StreamingView pairing={pairing} connection={connection} onExit={handleExit} />;
   }
 
-  return <StreamingView pairing={pairing} onExit={handleExit} />;
+  return (
+    <>
+      <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setManualPairing} />
+      <div className="fixed bottom-4 right-4 z-10 flex flex-col items-end gap-2">
+        <button onClick={() => setShowSettings((value) => !value)} className="text-sm text-velo-indigo underline">
+          Settings
+        </button>
+        {showSettings && <ConnectionModeSettings connection={connection} onChange={saveConnection} />}
+      </div>
+      <AndroidUpdateBanner />
+    </>
+  );
 }
