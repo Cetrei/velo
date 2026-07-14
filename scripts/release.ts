@@ -221,7 +221,7 @@ function releaseWeb(): void {
   applyWebVersionBumpIfRequested();
   const webDir = join('apps', 'web');
   runOrExit(['bun', 'run', 'build'], webDir);
-  runOrExit(['wrangler', 'pages', 'deploy', 'dist', '--project-name=velo'], webDir);
+  runOrExit(['bunx', 'wrangler', 'pages', 'deploy', 'dist', '--project-name=velo'], webDir);
   console.log('[RELEASE] Web deploy complete. This target does not create a git tag or push to origin.');
 }
 
