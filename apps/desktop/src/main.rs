@@ -157,6 +157,7 @@ fn main() {
             backend_manager::get_backend_status,
             backend_manager::check_backend_update,
             backend_manager::install_backend_update,
+            backend_manager::install_backend_from_bytes,
             backend_manager::cancel_backend_update,
             backend_manager::start_backend,
             backend_manager::restart_backend,

@@ -1,6 +1,6 @@
 use crate::log_messages::LogMessage;
 use crate::update_progress::{
-    download_with_progress, emit_progress, request_timeout, CancellationToken, UpdateProgress, TUNNEL_UPDATE_PROGRESS_EVENT,
+    download_with_progress, emit_progress, request_timeout, CancellationToken, DownloadError, UpdateProgress, TUNNEL_UPDATE_PROGRESS_EVENT,
 };
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
@@ -149,7 +149,10 @@ async fn install_latest_tunnel_binary(app: &AppHandle) -> Result<String, String>
     let never_cancelled = CancellationToken::new();
     let binary = download_with_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, &download_url, &partial_path, &never_cancelled)
         .await
-        .map_err(|_| LogMessage::TunnelDownloadFailed("tunnel download failed".to_string()).text())?;
+        .map_err(|error| match error {
+            DownloadError::Cancelled => LogMessage::TunnelDownloadFailed("download cancelled unexpectedly".to_string()).text(),
+            DownloadError::Failed(reason) => LogMessage::TunnelDownloadFailed(reason).text(),
+        })?;
 
     let writable_path = resolve_writable_tunnel_path(app)?;
     write_tunnel_binary_to_disk(app, &writable_path, &binary)?;

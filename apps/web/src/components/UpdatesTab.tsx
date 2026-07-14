@@ -183,7 +183,7 @@ function toVisualState(status: string, isReady: boolean, isInstalling: boolean, 
 }
 
 function DesktopAppUpdateRow({ updater }: { updater: DesktopUpdater }) {
-  const { status, currentVersion, latestVersion, runCheck, installNow } = updater;
+  const { status, currentVersion, latestVersion, progress, runCheck, installNow } = updater;
   const isChecking = status === 'checking';
   const isReady = status === 'ready';
   const isInstalling = status === 'installing';
@@ -200,6 +200,7 @@ function DesktopAppUpdateRow({ updater }: { updater: DesktopUpdater }) {
       isInstalling={isInstalling}
       onCheck={runCheck}
       onInstall={installNow}
+      progress={progress}
       scopeNote="Velo will restart automatically once this finishes."
     />
   );

@@ -1,6 +1,6 @@
 use crate::log_messages::LogMessage;
 use crate::update_progress::{
-    download_with_progress, emit_progress, request_timeout, CancellationToken, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT,
+    download_with_progress, emit_progress, request_timeout, CancellationToken, DownloadError, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT,
 };
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
@@ -334,13 +334,20 @@ pub fn stop_backend(app: AppHandle) -> Result<BackendStatus, String> {
     Ok(BackendStatus { running: false, installed: is_backend_installed(&app), version: None })
 }
 
-const BACKEND_UNINSTALL_MAX_ATTEMPTS: u32 = 5;
-const BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS: u64 = 200;
+const BACKEND_UNINSTALL_MAX_ATTEMPTS: u32 = 8;
+const BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS: u64 = 250;
+const BACKEND_UNINSTALL_INITIAL_DELAY_MS: u64 = 250;
 
 /// Retries removing the backend directory a few times before giving up.
 /// taskkill returns as soon as it requests process termination, not once
 /// Windows has actually released the file handle, so the binary can still
 /// be locked for a brief window immediately after the kill call returns.
+/// Windows also keeps a just-terminated .exe's image section cached by the
+/// memory manager for a short moment after exit, which alone can produce
+/// "Access is denied" on the very first delete attempt even though the
+/// process is already gone; the fixed initial delay below gives that cache
+/// a chance to clear before the first attempt instead of burning it as a
+/// wasted, near-instant failure.
 fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
     let writable_path = resolve_writable_backend_path(app)?;
     if !writable_path.exists() {
@@ -350,12 +357,15 @@ fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
         .parent()
         .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
 
+    std::thread::sleep(std::time::Duration::from_millis(BACKEND_UNINSTALL_INITIAL_DELAY_MS));
+
     let mut last_error = String::new();
     for attempt in 1..=BACKEND_UNINSTALL_MAX_ATTEMPTS {
         match std::fs::remove_dir_all(backend_dir) {
             Ok(()) => return Ok(()),
             Err(error) => {
                 last_error = error.to_string();
+                println!("{}", LogMessage::BackendUninstallRetrying(attempt, last_error.clone()).text());
                 let delay = BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS * attempt as u64;
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
@@ -506,12 +516,12 @@ async fn download_new_backend_binary(
 ) -> Result<Vec<u8>, String> {
     let bytes = download_with_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, download_url, partial_path, cancellation)
         .await
-        .map_err(|_| {
-            if cancellation.is_cancelled() {
+        .map_err(|error| match error {
+            DownloadError::Cancelled => {
                 println!("{}", LogMessage::BackendUpdateCancelled.text());
-                return CANCELLED_ERROR.to_string();
+                CANCELLED_ERROR.to_string()
             }
-            "backend update download did not complete".to_string()
+            DownloadError::Failed(reason) => LogMessage::BackendDownloadFailed(reason).text(),
         })?;
 
     emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
@@ -578,4 +588,35 @@ pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, Str
     emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
 
     Ok(BackendStatus { running: true, installed: true, version: Some(latest_version) })
+}
+
+const DEV_SIDELOAD_MIN_SIZE_BYTES: usize = 1024;
+
+/// Installs a backend binary supplied directly by the developer from the
+/// Console tab, bypassing the GitHub Releases lookup entirely. This exists
+/// for local iteration: a freshly `bun run build:server`-compiled exe often
+/// has no matching `backend-v*` GitHub release yet, so the normal update
+/// path has nothing to check against. Reuses the same backup, install,
+/// restart, and healthcheck-gated rollback sequence as a real update so a
+/// bad manual build can't brick the installed backend either.
+#[tauri::command]
+pub async fn install_backend_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<BackendStatus, String> {
+    if bytes.len() < DEV_SIDELOAD_MIN_SIZE_BYTES {
+        return Err(LogMessage::BackendDownloadFailed("selected file is too small to be a real backend binary".to_string()).text());
+    }
+
+    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
+    let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
+    let writable_path = resolve_writable_backend_path(&app).map_err(|error| fail_update(&app, error))?;
+    let backup_path = resolve_backup_backend_path(&app).map_err(|error| fail_update(&app, error))?;
+
+    if let Err(error) = replace_and_restart_backend(&app, &writable_path, &backup_path, &bytes).await {
+        return Err(error);
+    }
+
+    let installed_version = fetch_running_backend_version(&app).await.unwrap_or_else(|| "unknown".to_string());
+    println!("{}", LogMessage::BackendUpdateInstalled(previous_version, installed_version.clone()).text());
+    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: installed_version.clone() });
+
+    Ok(BackendStatus { running: true, installed: true, version: Some(installed_version) })
 }

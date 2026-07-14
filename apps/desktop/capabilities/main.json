@@ -19,6 +19,7 @@
     "allow-close-splashscreen",
     "allow-check-backend-update",
     "allow-install-backend-update",
+    "allow-install-backend-from-bytes",
     "allow-cancel-backend-update",
     "allow-get-backend-status",
     "allow-start-backend",

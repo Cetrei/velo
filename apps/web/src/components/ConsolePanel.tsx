@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Copy, Check, Play, Square, RotateCw, Loader2, Terminal } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Copy, Check, Play, Square, RotateCw, Loader2, Terminal, FolderInput } from 'lucide-react';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { useTunnelStatus } from '../hooks/useTunnelStatus';
 import { useConfig } from '../hooks/useConfig';
@@ -126,8 +126,49 @@ function ProcessControls({ isRunning, isBusy, disabled, disabledReason, onStart,
   );
 }
 
+interface SideloadBackendControlProps {
+  isBusy: boolean;
+  onSelectFile: (file: File) => void;
+}
+
+/// Lets a developer point the backend updater at a locally built exe
+/// instead of a GitHub release. Reads the file's bytes directly in the
+/// browser via the File API rather than opening a native file dialog,
+/// since Tauri doesn't expose real filesystem paths to the webview and
+/// this avoids pulling in the separate dialog plugin for a dev-only tool.
+function SideloadBackendControl({ isBusy, onSelectFile }: SideloadBackendControlProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) onSelectFile(file);
+  }
+
+  return (
+    <>
+      <input ref={fileInputRef} type="file" accept=".exe" className="hidden" onChange={handleFileChange} />
+      <ProcessControlButton onClick={() => fileInputRef.current?.click()} disabled={isBusy} title="Install a local backend exe (dev only)">
+        <FolderInput size={13} />
+      </ProcessControlButton>
+    </>
+  );
+}
+
 function BackendConsoleTab() {
-  const { status, isInstalled, isRunning, currentVersion, latestVersion, progress, startNow, stopNow, restartNow, uninstallNow } = useBackendUpdater();
+  const {
+    status,
+    isInstalled,
+    isRunning,
+    currentVersion,
+    latestVersion,
+    progress,
+    startNow,
+    stopNow,
+    restartNow,
+    uninstallNow,
+    installFromFile,
+  } = useBackendUpdater();
   const { config, saveConfig } = useConfig();
   const text = `status=${status} installed=${isInstalled} running=${isRunning} current=${currentVersion ?? 'n/a'} latest=${latestVersion ?? 'n/a'}`;
   const isBusy = status === 'installing' || status === 'starting' || status === 'stopping' || status === 'restarting' || status === 'uninstalling';
@@ -145,15 +186,18 @@ function BackendConsoleTab() {
       note="Live stdout from the Backend process is not piped into the app yet, see the Flags note for this session."
     >
       <div className="flex items-center justify-between gap-3 font-sans">
-        <ProcessControls
-          isRunning={isRunning}
-          isBusy={isBusy}
-          disabled={!isInstalled}
-          disabledReason="Install the backend first from Updates"
-          onStart={startNow}
-          onStop={stopNow}
-          onRestart={restartNow}
-        />
+        <div className="flex items-center gap-1.5">
+          <ProcessControls
+            isRunning={isRunning}
+            isBusy={isBusy}
+            disabled={!isInstalled}
+            disabledReason="Install the backend first from Updates"
+            onStart={startNow}
+            onStop={stopNow}
+            onRestart={restartNow}
+          />
+          <SideloadBackendControl isBusy={isBusy} onSelectFile={installFromFile} />
+        </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-velo-text-secondary">
             <input

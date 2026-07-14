@@ -114,7 +114,7 @@ export function describeProgressPhase(progress: UpdateProgressEvent | null): str
     case 'installing_new':
       return 'Installing the new version…';
     case 'starting':
-      return 'Starting the updated backend…';
+      return 'Starting up…';
     case 'done':
       return progress.version ? `Updated to ${progress.version}` : 'Update complete';
     case 'cancelled':

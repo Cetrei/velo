@@ -34,6 +34,11 @@ description = "Allows downloading and installing a newer backend binary, restart
 commands.allow = ["install_backend_update"]
 
 [[permission]]
+identifier = "allow-install-backend-from-bytes"
+description = "Allows installing a developer-supplied backend binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only."
+commands.allow = ["install_backend_from_bytes"]
+
+[[permission]]
 identifier = "allow-cancel-backend-update"
 description = "Allows cancelling an in-progress backend download or installation."
 commands.allow = ["cancel_backend_update"]
@@ -89,6 +94,7 @@ permissions = [
   "allow-close-splashscreen",
   "allow-check-backend-update",
   "allow-install-backend-update",
+  "allow-install-backend-from-bytes",
   "allow-cancel-backend-update",
   "allow-get-backend-status",
   "allow-start-backend",

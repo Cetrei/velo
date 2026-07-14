@@ -29,6 +29,7 @@ pub enum LogMessage {
     BackendUpdateCancelled,
     BackendDataDirResolveFailed,
     BackendUninstallFailed(String),
+    BackendUninstallRetrying(u32, String),
     BackendUninstalled,
     BackendStartupSkippedDisabled,
     BackendKillAttempt(u32),
@@ -152,6 +153,9 @@ impl LogMessage {
             }
             LogMessage::BackendUninstallFailed(reason) => {
                 format!("[BACKEND_MANAGER] Failed to remove backend binary and data directory: {reason}")
+            }
+            LogMessage::BackendUninstallRetrying(attempt, reason) => {
+                format!("[BACKEND_MANAGER] Backend directory still locked by the OS after exit, retrying removal (attempt {attempt}): {reason}")
             }
             LogMessage::BackendUninstalled => {
                 "[BACKEND_MANAGER] Backend uninstalled, binary and data directory removed".to_string()

@@ -92,6 +92,24 @@ export function useBackendUpdater() {
     }
   }, [applyBackendStatus, resetProgress]);
 
+  const installFromFile = useCallback(
+    async (file: File) => {
+      setStatus('installing');
+      resetProgress();
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const backendStatus = await invoke<BackendStatusResponse>('install_backend_from_bytes', { bytes: Array.from(bytes) });
+        applyBackendStatus(backendStatus);
+        setLatestVersion(null);
+        setStatus('idle');
+      } catch (error) {
+        console.warn('[BACKEND_UPDATER] failed to install backend from a local file', error);
+        setStatus('error');
+      }
+    },
+    [applyBackendStatus, resetProgress],
+  );
+
   const startNow = useCallback(async () => {
     setStatus('starting');
     try {
@@ -162,6 +180,7 @@ export function useBackendUpdater() {
     progress,
     runCheck,
     installNow,
+    installFromFile,
     cancelNow,
     startNow,
     stopNow,

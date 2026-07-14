@@ -3,12 +3,20 @@ import { join, basename } from 'node:path';
 
 const ANDROID_DIR = join('apps', 'web', 'android');
 const GRADLE_PROPS = join(ANDROID_DIR, 'gradle.properties');
+const VARIABLES_GRADLE = join(ANDROID_DIR, 'variables.gradle');
 
 function readProp(key) {
   if (!existsSync(GRADLE_PROPS)) return undefined;
   const content = readFileSync(GRADLE_PROPS, 'utf-8');
   const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
   return match ? match[1].trim() : undefined;
+}
+
+function readAppVersion() {
+  if (!existsSync(VARIABLES_GRADLE)) return 'unknown';
+  const content = readFileSync(VARIABLES_GRADLE, 'utf-8');
+  const match = content.match(/veloVersionName\s*=\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : 'unknown';
 }
 
 function findFiles(dir, ext) {
@@ -36,10 +44,12 @@ function collect() {
 
   const releaseApk = apks.find(p => p.includes('release')) || apks[0];
   const distDir = (readProp('veloAndroidDistDir') || 'dist/android').replace(/\\/g, '/');
-  
+
   if (!existsSync(distDir)) mkdirSync(distDir, { recursive: true });
-  
-  const dest = join(distDir, 'app-release.apk');
+
+  // Matches the desktop installer's naming scheme (Velo_<version>_x64-setup.exe)
+  // so both platforms are identifiable at a glance on the GitHub Releases page.
+  const dest = join(distDir, `Velo_${readAppVersion()}.apk`);
   copyFileSync(releaseApk, dest);
   
   console.log(`[COLLECT] ${releaseApk} -> ${dest}`);

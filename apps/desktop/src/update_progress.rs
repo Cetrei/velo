@@ -52,7 +52,14 @@ impl CancellationToken {
     }
 }
 
-pub struct DownloadCancelledError;
+/// Carries the real, specific failure reason up to the caller instead of a
+/// generic sentinel. Callers decide how to log or surface `Failed`, so the
+/// underlying cause (a timeout, a stream reset, an HTTP status) is not lost
+/// before it reaches the progress event the user actually sees.
+pub enum DownloadError {
+    Cancelled,
+    Failed(String),
+}
 
 const CANCELLED_MARKER: &str = "__cancelled__";
 
@@ -125,15 +132,10 @@ pub async fn download_with_progress(
     url: &str,
     partial_path: &Path,
     cancellation: &CancellationToken,
-) -> Result<Vec<u8>, DownloadCancelledError> {
+) -> Result<Vec<u8>, DownloadError> {
     download_with_progress_inner(app, event_name, url, partial_path, cancellation)
         .await
-        .map_err(|error| {
-            if error != CANCELLED_MARKER {
-                emit_progress(app, event_name, UpdateProgress::Failed { message: error });
-            }
-            DownloadCancelledError
-        })
+        .map_err(|error| if error == CANCELLED_MARKER { DownloadError::Cancelled } else { DownloadError::Failed(error) })
 }
 
 async fn download_with_progress_inner(
