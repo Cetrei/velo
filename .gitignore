@@ -53,5 +53,4 @@ keys/
 
 # Finder (MacOS) folder config
 .DS_Store
-apps/desktop/binaries/velo-backend-x86_64-pc-windows-msvc.exe
-apps/desktop/binaries/velo-backend-x86_64-pc-windows-msvc.exe
+apps/desktop/binaries/
