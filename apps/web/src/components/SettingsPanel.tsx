@@ -222,10 +222,14 @@ function DeveloperSettingsTab({ config, saveConfig }: UserTabProps) {
 }
 
 export function SettingsPanel({ initialTab }: SettingsPanelProps) {
-  const { config, error, saveConfig } = useConfig();
+  const { config, error, saveConfig, isDesktop } = useConfig();
 
   if (error) {
-    return <p className="text-sm text-velo-coral">{error}</p>;
+    return (
+      <p className="text-sm text-velo-coral">
+        {isDesktop ? error : 'Connection mode, resolution, and FPS are managed on the Velo Desktop app. Open Settings there to change them.'}
+      </p>
+    );
   }
 
   if (!config) {

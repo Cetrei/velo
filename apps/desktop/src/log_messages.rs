@@ -28,6 +28,18 @@ pub enum LogMessage {
     BackendUninstallFailed(String),
     BackendUninstalled,
     BackendStartupSkippedDisabled,
+    TunnelSpawnFailed(String),
+    TunnelSpawned,
+    TunnelKillFailed,
+    TunnelBinaryMissing(String),
+    TunnelConfigMissing,
+    TunnelStartupSkippedUnmanaged,
+    TunnelDataDirResolveFailed,
+    TunnelReleaseFetchFailed(String),
+    TunnelDownloadFailed(String),
+    TunnelInstallFailed(String),
+    TunnelInstalled(String),
+    TunnelVersionWriteFailed(String),
 }
 
 impl LogMessage {
@@ -119,6 +131,42 @@ impl LogMessage {
             }
             LogMessage::BackendStartupSkippedDisabled => {
                 "[BACKEND_MANAGER] Backend autostart skipped, disabled in user.yml (backend.enabled = false)".to_string()
+            }
+            LogMessage::TunnelSpawnFailed(reason) => {
+                format!("[TUNNEL_MANAGER] Failed to spawn cloudflared: {reason}")
+            }
+            LogMessage::TunnelSpawned => {
+                "[TUNNEL_MANAGER] cloudflared spawned with the configured tunnel token".to_string()
+            }
+            LogMessage::TunnelKillFailed => {
+                "[TUNNEL_MANAGER] Failed to stop the running cloudflared process".to_string()
+            }
+            LogMessage::TunnelBinaryMissing(path) => {
+                format!("[TUNNEL_MANAGER] cloudflared.exe not found at {path}, cannot start a managed tunnel")
+            }
+            LogMessage::TunnelConfigMissing => {
+                "[TUNNEL_MANAGER] connection.cloudflare_relay missing from user.yml, cannot determine managed tunnel settings".to_string()
+            }
+            LogMessage::TunnelStartupSkippedUnmanaged => {
+                "[TUNNEL_MANAGER] Managed tunnel skipped, connection.cloudflare_relay.managed is false or tunnel_token is empty".to_string()
+            }
+            LogMessage::TunnelDataDirResolveFailed => {
+                "[TUNNEL_MANAGER] Failed to resolve the app data directory for the managed cloudflared binary".to_string()
+            }
+            LogMessage::TunnelReleaseFetchFailed(reason) => {
+                format!("[TUNNEL_MANAGER] Failed to fetch the latest cloudflared release from GitHub: {reason}")
+            }
+            LogMessage::TunnelDownloadFailed(reason) => {
+                format!("[TUNNEL_MANAGER] Failed to download the cloudflared binary: {reason}")
+            }
+            LogMessage::TunnelInstallFailed(path) => {
+                format!("[TUNNEL_MANAGER] Failed to write the downloaded cloudflared binary to {path}")
+            }
+            LogMessage::TunnelInstalled(version) => {
+                format!("[TUNNEL_MANAGER] cloudflared {version} downloaded and installed")
+            }
+            LogMessage::TunnelVersionWriteFailed(path) => {
+                format!("[TUNNEL_MANAGER] Failed to record installed cloudflared version at {path}")
             }
         }
     }

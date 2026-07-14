@@ -1,5 +1,6 @@
 use crate::backend_manager::BackendState;
 use crate::log_messages::LogMessage;
+use crate::tunnel_manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
@@ -36,6 +37,7 @@ fn stop_backend_before_exit(app: &AppHandle) {
     if let Some(mut child) = app.state::<BackendState>().0.lock().unwrap().take() {
         let _ = child.kill();
     }
+    tunnel_manager::stop_tunnel_before_exit(app);
 }
 
 fn handle_menu_event(app: &AppHandle, menu_id: &str) {

@@ -13,7 +13,7 @@ const STORAGE_KEY = 'velo:connection-config';
 const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   mode: 'stun_p2p',
   stun_p2p: {},
-  cloudflare_relay: { tunnel_token: '' },
+  cloudflare_relay: { tunnel_token: '', managed: false },
 };
 
 function parseStoredConnectionConfig(raw: string | null): ConnectionConfig {

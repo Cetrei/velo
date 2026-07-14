@@ -4,12 +4,14 @@ mod backend_manager;
 mod config;
 mod log_messages;
 mod tray;
+mod tunnel_manager;
 
 use backend_manager::BackendState;
 use log_messages::LogMessage;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Manager, WindowEvent};
+use tunnel_manager::TunnelState;
 
 #[tauri::command]
 fn push_frame(bytes: Vec<u8>, width: u32, height: u32) -> Result<(), String> {
@@ -28,7 +30,9 @@ fn get_user_config(app: tauri::AppHandle) -> Result<serde_yaml::Value, String> {
 
 #[tauri::command]
 fn save_user_config(app: tauri::AppHandle, new_config: serde_yaml::Value) -> Result<(), String> {
-    config::save_user_config(&app, new_config)
+    config::save_user_config(&app, new_config)?;
+    tunnel_manager::sync_tunnel_with_config(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -136,6 +140,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(BackendState(Mutex::new(None)))
+        .manage(TunnelState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             push_frame,
             get_system_config,
@@ -146,12 +151,16 @@ fn main() {
             backend_manager::check_backend_update,
             backend_manager::install_backend_update,
             backend_manager::start_backend,
-            backend_manager::uninstall_backend
+            backend_manager::uninstall_backend,
+            tunnel_manager::get_tunnel_status,
+            tunnel_manager::check_tunnel_update,
+            tunnel_manager::restart_managed_tunnel
         ])
         .setup(|app| {
             create_main_window(app.handle())?;
             tray::create_tray(app.handle())?;
             spawn_backend_on_setup(app.handle());
+            tunnel_manager::sync_tunnel_with_config(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

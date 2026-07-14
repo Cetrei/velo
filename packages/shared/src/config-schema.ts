@@ -52,6 +52,13 @@ export interface StunP2pConnectionConfig {
 
 export interface CloudflareRelayConnectionConfig {
   tunnel_token: string;
+  /**
+   * Desktop only. When true and tunnel_token is non-empty, Velo Desktop spawns and manages
+   * cloudflared itself (see apps/desktop/src/tunnel_manager.rs) instead of requiring the user
+   * to run `cloudflared tunnel run` manually per docs/MANUAL_STEPS.md. Ignored on mobile, since
+   * only the desktop process can own a locally spawned cloudflared child process.
+   */
+  managed: boolean;
 }
 
 export interface ConnectionConfig {
@@ -213,10 +220,17 @@ function validateStunP2p(stunP2p: unknown, fieldPath: string): asserts stunP2p i
   assertField(typeof turn.credential === 'string', `${fieldPath}.turn.credential`);
 }
 
+const DEFAULT_CLOUDFLARE_RELAY_MANAGED = false;
+
 function validateCloudflareRelay(cloudflareRelay: unknown, fieldPath: string): asserts cloudflareRelay is CloudflareRelayConnectionConfig {
   assertField(isRecord(cloudflareRelay), fieldPath);
   const record = cloudflareRelay as Record<string, unknown>;
   assertField(typeof record.tunnel_token === 'string', `${fieldPath}.tunnel_token`);
+  if (record.managed === undefined) {
+    record.managed = DEFAULT_CLOUDFLARE_RELAY_MANAGED;
+    return;
+  }
+  assertField(typeof record.managed === 'boolean', `${fieldPath}.managed`);
 }
 
 function validateConnection(connection: unknown): asserts connection is ConnectionConfig {
