@@ -1,8 +1,8 @@
 import { useUpdater } from '../hooks/useUpdater';
 import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
-import { useConfig } from '../hooks/useConfig';
 import { getClientEnvironment } from '../lib/environment';
+import { describeProgressPhase } from '../hooks/useUpdateProgress';
 
 interface UpdateRowProps {
   label: string;
@@ -12,6 +12,7 @@ interface UpdateRowProps {
   isInstalling: boolean;
   onCheck: () => void;
   onInstall: () => void;
+  progressLabel?: string;
 }
 
 function UpdateRow({
@@ -22,32 +23,36 @@ function UpdateRow({
   isInstalling,
   onCheck,
   onInstall,
+  progressLabel,
 }: UpdateRowProps) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-velo-background px-4 py-3">
-      <div className="flex flex-col">
-        <span className="text-sm font-medium text-velo-text-primary">{label}</span>
-        <span className="text-xs text-velo-text-secondary">{currentVersionLabel}</span>
+    <div className="flex flex-col gap-1.5 rounded-xl bg-velo-background px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-velo-text-primary">{label}</span>
+          <span className="text-xs text-velo-text-secondary">{currentVersionLabel}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isUpdateReady ? (
+            <button
+              onClick={onInstall}
+              disabled={isInstalling}
+              className="rounded bg-velo-indigo px-3 py-1 text-sm text-velo-text-primary disabled:opacity-40"
+            >
+              {isInstalling ? 'Installing…' : 'Install update'}
+            </button>
+          ) : (
+            <button
+              onClick={onCheck}
+              disabled={isChecking}
+              className="rounded bg-velo-surface px-3 py-1 text-sm text-velo-text-secondary disabled:opacity-40"
+            >
+              {isChecking ? 'Checking…' : 'Check for updates'}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        {isUpdateReady ? (
-          <button
-            onClick={onInstall}
-            disabled={isInstalling}
-            className="rounded bg-velo-indigo px-3 py-1 text-sm text-velo-text-primary disabled:opacity-40"
-          >
-            {isInstalling ? 'Installing…' : 'Install update'}
-          </button>
-        ) : (
-          <button
-            onClick={onCheck}
-            disabled={isChecking}
-            className="rounded bg-velo-surface px-3 py-1 text-sm text-velo-text-secondary disabled:opacity-40"
-          >
-            {isChecking ? 'Checking…' : 'Check for updates'}
-          </button>
-        )}
-      </div>
+      {isInstalling && progressLabel && <span className="text-xs text-velo-text-secondary">{progressLabel}</span>}
     </div>
   );
 }
@@ -99,21 +104,9 @@ function AndroidAppUpdateRow() {
 }
 
 function BackendUpdateRow() {
-  const {
-    status,
-    isInstalled,
-    isRunning,
-    currentVersion,
-    latestVersion,
-    runCheck,
-    installNow,
-    startNow,
-    uninstallNow,
-  } = useBackendUpdater();
-  const { config, saveConfig } = useConfig();
+  const { status, isInstalled, currentVersion, latestVersion, progress, runCheck, installNow } = useBackendUpdater();
 
-  const isBusy = status === 'checking' || status === 'installing' || status === 'starting' || status === 'uninstalling';
-  const isEnabled = config?.backend?.enabled ?? true;
+  const isBusy = status === 'checking' || status === 'installing';
 
   function describeStatus(): string {
     if (status === 'ready') {
@@ -122,81 +115,20 @@ function BackendUpdateRow() {
         : `Update available: v${latestVersion}`;
     }
     if (!isInstalled) return 'Not installed';
-    if (!isRunning) return currentVersion ? `Installed (v${currentVersion}), stopped` : 'Installed, stopped';
-    return currentVersion ? `Running v${currentVersion}` : 'Running';
-  }
-
-  function toggleEnabled(nextEnabled: boolean) {
-    if (!config) return;
-    saveConfig({ ...config, backend: { enabled: nextEnabled } });
-    if (nextEnabled) {
-      startNow();
-    } else {
-      uninstallNow();
-    }
+    return currentVersion ? `Installed (v${currentVersion})` : 'Installed';
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl bg-velo-background px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <span className="text-sm font-medium text-velo-text-primary">Backend</span>
-          <span className="text-xs text-velo-text-secondary">{describeStatus()}</span>
-        </div>
-        <label className="flex items-center gap-2 text-xs text-velo-text-secondary">
-          Enabled
-          <input
-            type="checkbox"
-            checked={isEnabled}
-            disabled={isBusy || !config}
-            onChange={(event) => toggleEnabled(event.target.checked)}
-          />
-        </label>
-      </div>
-      <div className="flex items-center gap-2">
-        {status === 'ready' ? (
-          <button
-            onClick={installNow}
-            disabled={isBusy}
-            className="rounded bg-velo-indigo px-3 py-1 text-sm text-velo-text-primary disabled:opacity-40"
-          >
-            Install update
-          </button>
-        ) : (
-          <button
-            onClick={isInstalled ? runCheck : installNow}
-            disabled={isBusy}
-            className="rounded bg-velo-surface px-3 py-1 text-sm text-velo-text-secondary disabled:opacity-40"
-          >
-            {isBusy
-              ? status === 'checking'
-                ? 'Checking…'
-                : 'Installing…'
-              : isInstalled
-                ? 'Check for updates'
-                : 'Install'}
-          </button>
-        )}
-        {isInstalled && !isRunning && (
-          <button
-            onClick={startNow}
-            disabled={isBusy}
-            className="rounded bg-velo-surface px-3 py-1 text-sm text-velo-text-secondary disabled:opacity-40"
-          >
-            {status === 'starting' ? 'Starting…' : 'Start'}
-          </button>
-        )}
-        {isInstalled && (
-          <button
-            onClick={uninstallNow}
-            disabled={isBusy}
-            className="rounded bg-velo-surface px-3 py-1 text-sm text-velo-coral disabled:opacity-40"
-          >
-            {status === 'uninstalling' ? 'Uninstalling…' : 'Uninstall'}
-          </button>
-        )}
-      </div>
-    </div>
+    <UpdateRow
+      label="Backend"
+      currentVersionLabel={describeStatus()}
+      isChecking={status === 'checking'}
+      isUpdateReady={status === 'ready'}
+      isInstalling={isBusy && status === 'installing'}
+      onCheck={runCheck}
+      onInstall={installNow}
+      progressLabel={describeProgressPhase(progress)}
+    />
   );
 }
 

@@ -1,4 +1,5 @@
 use crate::log_messages::LogMessage;
+use crate::update_progress::{download_with_progress, emit_progress, request_timeout, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT};
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -172,17 +173,55 @@ fn resolve_releases_repo(app: &AppHandle) -> Result<String, String> {
 }
 
 async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
-    let url = resolve_local_version_url(app).ok()?;
+    let url = match resolve_local_version_url(app) {
+        Ok(url) => url,
+        Err(reason) => {
+            println!("{}", LogMessage::BackendVersionUrlUnresolved(reason).text());
+            return None;
+        }
+    };
     println!("{}", LogMessage::BackendVersionFetchAttempt(url.clone()).text());
 
-    let Ok(response) = reqwest::get(&url).await else {
-        println!("{}", LogMessage::BackendVersionFetchUnreachable(url).text());
-        return None;
+    let client = match reqwest::Client::builder().timeout(request_timeout()).build() {
+        Ok(client) => client,
+        Err(error) => {
+            println!("{}", LogMessage::BackendVersionHttpClientBuildFailed(error.to_string()).text());
+            return None;
+        }
     };
-    let Ok(parsed) = response.json::<LocalVersionResponse>().await else {
-        println!("{}", LogMessage::BackendVersionFetchUnreachable(url).text());
-        return None;
+
+    let response = match client.get(&url).send().await {
+        Ok(response) => response,
+        Err(error) => {
+            println!("{}", LogMessage::BackendVersionFetchUnreachable(format!("{url} ({error})")).text());
+            return None;
+        }
     };
+
+    if !response.status().is_success() {
+        println!("{}", LogMessage::BackendVersionNonSuccessStatus(url, response.status().to_string()).text());
+        return None;
+    }
+
+    let raw_body = match response.text().await {
+        Ok(body) => body,
+        Err(error) => {
+            println!("{}", LogMessage::BackendVersionBodyUnreadable(url, error.to_string()).text());
+            return None;
+        }
+    };
+
+    let parsed: LocalVersionResponse = match serde_json::from_str(&raw_body) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            println!("{}", LogMessage::BackendVersionUnexpectedShape(url, error.to_string(), raw_body).text());
+            return None;
+        }
+    };
+
+    if parsed.version == "0.0.0-dev" {
+        println!("{}", LogMessage::BackendVersionIsDevFallback(url.clone()).text());
+    }
 
     println!("{}", LogMessage::BackendVersionFetchResult(url, parsed.version.clone()).text());
     Some(parsed.version)
@@ -196,7 +235,10 @@ async fn fetch_latest_backend_release(app: &AppHandle) -> Result<GithubRelease, 
     let repo = resolve_releases_repo(app)?;
     let releases_url = format!("https://api.github.com/repos/{repo}/releases");
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(request_timeout())
+        .build()
+        .map_err(|error| LogMessage::BackendReleaseFetchFailed(format!("failed to build HTTP client: {error}")).text())?;
     let response = client
         .get(&releases_url)
         .header("Accept", GITHUB_API_ACCEPT_HEADER)
@@ -204,6 +246,14 @@ async fn fetch_latest_backend_release(app: &AppHandle) -> Result<GithubRelease, 
         .send()
         .await
         .map_err(|error| LogMessage::BackendReleaseFetchFailed(error.to_string()).text())?;
+
+    if !response.status().is_success() {
+        return Err(LogMessage::BackendReleaseFetchFailed(format!(
+            "{releases_url} responded with HTTP {}",
+            response.status()
+        ))
+        .text());
+    }
 
     let releases: Vec<GithubRelease> = response
         .json()
@@ -241,6 +291,19 @@ pub fn start_backend(app: AppHandle) -> Result<BackendStatus, String> {
     Ok(BackendStatus { running: true, installed: true, version: None })
 }
 
+#[tauri::command]
+pub fn restart_backend(app: AppHandle) -> Result<BackendStatus, String> {
+    kill_running_backend(&app)?;
+    spawn_backend(&app)?;
+    Ok(BackendStatus { running: true, installed: true, version: None })
+}
+
+#[tauri::command]
+pub fn stop_backend(app: AppHandle) -> Result<BackendStatus, String> {
+    kill_running_backend(&app)?;
+    Ok(BackendStatus { running: false, installed: is_backend_installed(&app), version: None })
+}
+
 fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
     let writable_path = resolve_writable_backend_path(app)?;
     if !writable_path.exists() {
@@ -275,18 +338,7 @@ pub async fn check_backend_update(app: AppHandle) -> Result<BackendUpdateInfo, S
     Ok(BackendUpdateInfo { available, current_version, latest_version: Some(latest_version) })
 }
 
-async fn download_backend_binary(url: &str) -> Result<Vec<u8>, String> {
-    let response = reqwest::get(url)
-        .await
-        .map_err(|error| LogMessage::BackendDownloadFailed(error.to_string()).text())?;
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| LogMessage::BackendDownloadFailed(error.to_string()).text())?;
-    Ok(bytes.to_vec())
-}
-
-fn rename_with_retry(temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(), String> {
+fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(), String> {
     let mut last_error = String::new();
     for attempt in 1..=BACKEND_REPLACE_MAX_ATTEMPTS {
         match std::fs::rename(temp_path, writable_path) {
@@ -294,6 +346,7 @@ fn rename_with_retry(temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(),
             Err(error) => {
                 last_error = error.to_string();
                 println!("{}", LogMessage::BackendReplaceRetrying(attempt, last_error.clone()).text());
+                emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RemovingOld);
                 let delay = BACKEND_REPLACE_RETRY_BASE_DELAY_MS * attempt as u64;
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
@@ -302,38 +355,76 @@ fn rename_with_retry(temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(),
     Err(LogMessage::BackendReplaceFailed(last_error).text())
 }
 
-fn replace_backend_binary_on_disk(writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
+fn replace_backend_binary_on_disk(app: &AppHandle, writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
     let parent = writable_path
         .parent()
         .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
     std::fs::create_dir_all(parent)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
 
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RemovingOld);
+
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, new_binary)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
-    rename_with_retry(&temp_path, writable_path)
+
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
+    rename_with_retry(app, &temp_path, writable_path)
 }
 
 #[tauri::command]
 pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, String> {
+    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
+
     let previous_version = fetch_running_backend_version(&app).await;
-    let release = fetch_latest_backend_release(&app).await?;
-    let download_url = extract_backend_download_url(&release)?;
-    let new_binary = download_backend_binary(&download_url).await?;
+
+    let release = match fetch_latest_backend_release(&app).await {
+        Ok(release) => release,
+        Err(error) => {
+            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+            return Err(error);
+        }
+    };
+
+    let download_url = match extract_backend_download_url(&release) {
+        Ok(url) => url,
+        Err(error) => {
+            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+            return Err(error);
+        }
+    };
+
+    let new_binary = match download_with_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, &download_url).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let message = LogMessage::BackendDownloadFailed(error.clone()).text();
+            println!("{message}");
+            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+            return Err(message);
+        }
+    };
 
     kill_running_backend(&app)?;
     kill_orphaned_backend_processes_by_name();
 
     let writable_path = resolve_writable_backend_path(&app)?;
-    replace_backend_binary_on_disk(&writable_path, &new_binary)?;
-    spawn_backend(&app)?;
+    if let Err(error) = replace_backend_binary_on_disk(&app, &writable_path, &new_binary) {
+        emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+        return Err(error);
+    }
+
+    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
+    if let Err(error) = spawn_backend(&app) {
+        emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+        return Err(error);
+    }
 
     let latest_version = tag_to_version_name(&release.tag_name);
     println!(
         "{}",
         LogMessage::BackendUpdateInstalled(previous_version.clone().unwrap_or_default(), latest_version.clone()).text()
     );
+    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
 
     Ok(BackendStatus { running: true, installed: true, version: Some(latest_version) })
 }

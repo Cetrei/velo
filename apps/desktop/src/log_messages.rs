@@ -38,6 +38,12 @@ pub enum LogMessage {
     BackendOrphanKillSucceeded,
     BackendOrphanKillNoneFound,
     BackendOrphanKillFailed(String),
+    BackendVersionUrlUnresolved(String),
+    BackendVersionHttpClientBuildFailed(String),
+    BackendVersionNonSuccessStatus(String, String),
+    BackendVersionBodyUnreadable(String, String),
+    BackendVersionUnexpectedShape(String, String, String),
+    BackendVersionIsDevFallback(String),
     TunnelSpawnFailed(String),
     TunnelSpawned,
     TunnelKillFailed,
@@ -171,6 +177,26 @@ impl LogMessage {
             }
             LogMessage::BackendOrphanKillFailed(reason) => {
                 format!("[BACKEND_MANAGER] Failed to run taskkill against the backend sidecar: {reason}")
+            }
+            LogMessage::BackendVersionUrlUnresolved(reason) => {
+                format!("[BACKEND_MANAGER] Cannot check running backend version, {reason}")
+            }
+            LogMessage::BackendVersionHttpClientBuildFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to build HTTP client for version check: {reason}")
+            }
+            LogMessage::BackendVersionNonSuccessStatus(url, status) => {
+                format!("[BACKEND_MANAGER] {url} responded with non-success HTTP status {status}, treating backend as not running")
+            }
+            LogMessage::BackendVersionBodyUnreadable(url, reason) => {
+                format!("[BACKEND_MANAGER] {url} response body could not be read: {reason}")
+            }
+            LogMessage::BackendVersionUnexpectedShape(url, reason, raw_body) => {
+                format!("[BACKEND_MANAGER] {url} response was not the expected JSON shape (a {{\"version\": string}} object): {reason}. Raw body: {raw_body}")
+            }
+            LogMessage::BackendVersionIsDevFallback(url) => {
+                format!(
+                    "[BACKEND_MANAGER] {url} responded with the dev fallback version 0.0.0-dev. This means the running velo-backend.exe was compiled without VELO_BACKEND_VERSION set at build time (check that apps/server/package.json has a real version and that `bun run compile` embeds it)."
+                )
             }
             LogMessage::TunnelSpawnFailed(reason) => {
                 format!("[TUNNEL_MANAGER] Failed to spawn cloudflared: {reason}")

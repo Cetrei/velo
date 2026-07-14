@@ -5,6 +5,7 @@ mod config;
 mod log_messages;
 mod tray;
 mod tunnel_manager;
+mod update_progress;
 
 use backend_manager::BackendState;
 use log_messages::LogMessage;
@@ -156,10 +157,13 @@ fn main() {
             backend_manager::check_backend_update,
             backend_manager::install_backend_update,
             backend_manager::start_backend,
+            backend_manager::restart_backend,
+            backend_manager::stop_backend,
             backend_manager::uninstall_backend,
             tunnel_manager::get_tunnel_status,
             tunnel_manager::check_tunnel_update,
-            tunnel_manager::restart_managed_tunnel
+            tunnel_manager::restart_managed_tunnel,
+            tunnel_manager::stop_managed_tunnel
         ])
         .setup(|app| {
             create_main_window(app.handle())?;

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Play, Square, RotateCw, Loader2 } from 'lucide-react';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { useTunnelStatus } from '../hooks/useTunnelStatus';
 import { useConfig } from '../hooks/useConfig';
 import { getClientEnvironment } from '../lib/environment';
+import { describeProgressPhase, progressPhaseFraction, type UpdateProgressEvent } from '../hooks/useUpdateProgress';
 import { DevLogList } from './DevLogList';
 
 type ConsoleTabId = 'app' | 'backend' | 'tunnel';
@@ -34,7 +35,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function StatusBlock({ title, text, note }: { title: string; text: string; note: string }) {
+function StatusBlock({ title, text, note, children }: { title: string; text: string; note: string; children?: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-velo-background p-3 font-mono text-xs text-velo-text-primary">
       <div className="flex items-center justify-between">
@@ -42,38 +43,171 @@ function StatusBlock({ title, text, note }: { title: string; text: string; note:
         <CopyButton text={text} />
       </div>
       <p className="whitespace-pre-wrap break-words">{text}</p>
+      {children}
       <p className="text-velo-text-secondary">{note}</p>
     </div>
   );
 }
 
+function ProgressBar({ progress }: { progress: UpdateProgressEvent | null }) {
+  if (!progress || progress.phase === 'done' || progress.phase === 'failed') return null;
+  const fraction = progressPhaseFraction(progress);
+  const label = describeProgressPhase(progress);
+
+  return (
+    <div className="flex flex-col gap-1 font-sans">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-velo-surface">
+        <div
+          className="h-full rounded-full bg-velo-indigo transition-all duration-300"
+          style={{ width: `${Math.max(4, Math.min(100, (fraction ?? 0) * 100))}%` }}
+        />
+      </div>
+      <span className="text-velo-text-secondary">{label}</span>
+    </div>
+  );
+}
+
+interface ProcessControlsProps {
+  isRunning: boolean;
+  isBusy: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  onStart?: () => void;
+  onStop: () => void;
+  onRestart: () => void;
+}
+
+function ProcessControlButton({
+  onClick,
+  disabled,
+  title,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="flex h-7 w-7 items-center justify-center rounded-lg bg-velo-surface text-velo-text-secondary transition-colors hover:text-velo-text-primary disabled:cursor-not-allowed disabled:opacity-30"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ProcessControls({ isRunning, isBusy, disabled, disabledReason, onStart, onStop, onRestart }: ProcessControlsProps) {
+  const isDisabled = Boolean(disabled) || isBusy;
+
+  return (
+    <div className="flex items-center gap-1.5" title={disabled ? disabledReason : undefined}>
+      {isBusy ? (
+        <ProcessControlButton onClick={() => {}} disabled title="Working…">
+          <Loader2 size={14} className="animate-spin" />
+        </ProcessControlButton>
+      ) : isRunning ? (
+        <ProcessControlButton onClick={onStop} disabled={isDisabled} title="Stop">
+          <Square size={13} />
+        </ProcessControlButton>
+      ) : (
+        <ProcessControlButton onClick={() => onStart?.()} disabled={isDisabled || !onStart} title="Start">
+          <Play size={13} />
+        </ProcessControlButton>
+      )}
+      <ProcessControlButton onClick={onRestart} disabled={isDisabled} title="Restart">
+        <RotateCw size={13} />
+      </ProcessControlButton>
+    </div>
+  );
+}
+
 function BackendConsoleTab() {
-  const { status, isInstalled, isRunning, currentVersion, latestVersion } = useBackendUpdater();
+  const { status, isInstalled, isRunning, currentVersion, latestVersion, progress, startNow, stopNow, restartNow, uninstallNow } = useBackendUpdater();
+  const { config, saveConfig } = useConfig();
   const text = `status=${status} installed=${isInstalled} running=${isRunning} current=${currentVersion ?? 'n/a'} latest=${latestVersion ?? 'n/a'}`;
+  const isBusy = status === 'installing' || status === 'starting' || status === 'stopping' || status === 'restarting' || status === 'uninstalling';
+  const autostartEnabled = config?.backend?.enabled ?? true;
+
+  function toggleAutostart(nextEnabled: boolean) {
+    if (!config) return;
+    saveConfig({ ...config, backend: { enabled: nextEnabled } });
+  }
 
   return (
     <StatusBlock
       title="Backend status"
       text={text}
       note="Live stdout from the Backend process is not piped into the app yet, see the Flags note for this session."
-    />
+    >
+      <div className="flex items-center justify-between gap-3 font-sans">
+        <ProcessControls
+          isRunning={isRunning}
+          isBusy={isBusy}
+          disabled={!isInstalled}
+          disabledReason="Install the backend first from Updates"
+          onStart={startNow}
+          onStop={stopNow}
+          onRestart={restartNow}
+        />
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-velo-text-secondary">
+            <input
+              type="checkbox"
+              checked={autostartEnabled}
+              disabled={isBusy || !config}
+              onChange={(event) => toggleAutostart(event.target.checked)}
+            />
+            Autostart
+          </label>
+          {isInstalled && (
+            <button
+              onClick={uninstallNow}
+              disabled={isBusy}
+              className="text-xs text-velo-coral underline disabled:opacity-40"
+            >
+              {status === 'uninstalling' ? 'Uninstalling…' : 'Uninstall'}
+            </button>
+          )}
+        </div>
+      </div>
+      <ProgressBar progress={progress} />
+    </StatusBlock>
   );
 }
 
 function TunnelConsoleTab() {
   const { config } = useConfig();
   const managed = config?.connection.cloudflare_relay.managed ?? false;
-  const { status, error } = useTunnelStatus(managed);
+  const { status, error, actionStatus, progress, restartNow, stopNow } = useTunnelStatus(managed);
   const text = status
     ? `managed=${managed} running=${status.running} installed=${status.installed} version=${status.version ?? 'n/a'}`
     : error ?? 'Managed tunnel mode is off';
+  const isBusy = actionStatus === 'restarting' || actionStatus === 'stopping';
 
   return (
     <StatusBlock
       title="Tunnel status"
       text={text}
       note="Live stdout from cloudflared is not piped into the app yet, see the Flags note for this session."
-    />
+    >
+      <div className="flex items-center justify-between gap-3 font-sans">
+        <ProcessControls
+          isRunning={status?.running ?? false}
+          isBusy={isBusy}
+          disabled={!managed}
+          disabledReason="Enable the Cloudflare managed tunnel mode in Connection settings first"
+          onStart={restartNow}
+          onStop={stopNow}
+          onRestart={restartNow}
+        />
+      </div>
+      <ProgressBar progress={progress} />
+    </StatusBlock>
   );
 }
 

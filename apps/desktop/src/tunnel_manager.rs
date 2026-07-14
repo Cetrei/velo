@@ -1,4 +1,5 @@
 use crate::log_messages::LogMessage;
+use crate::update_progress::{download_with_progress, emit_progress, request_timeout, UpdateProgress, TUNNEL_UPDATE_PROGRESS_EVENT};
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -76,7 +77,10 @@ fn write_installed_version(app: &AppHandle, version: &str) -> Result<(), String>
 }
 
 async fn fetch_latest_tunnel_release() -> Result<GithubRelease, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(request_timeout())
+        .build()
+        .map_err(|error| LogMessage::TunnelReleaseFetchFailed(format!("failed to build HTTP client: {error}")).text())?;
     let response = client
         .get(GITHUB_RELEASES_URL)
         .header("Accept", GITHUB_API_ACCEPT_HEADER)
@@ -84,6 +88,14 @@ async fn fetch_latest_tunnel_release() -> Result<GithubRelease, String> {
         .send()
         .await
         .map_err(|error| LogMessage::TunnelReleaseFetchFailed(error.to_string()).text())?;
+
+    if !response.status().is_success() {
+        return Err(LogMessage::TunnelReleaseFetchFailed(format!(
+            "{GITHUB_RELEASES_URL} responded with HTTP {}",
+            response.status()
+        ))
+        .text());
+    }
 
     let release: GithubRelease = response
         .json()
@@ -105,38 +117,34 @@ fn extract_tunnel_download_url(release: &GithubRelease) -> Result<String, String
         .ok_or_else(|| LogMessage::TunnelReleaseFetchFailed(format!("release {} has no {} asset", release.tag_name, WINDOWS_ASSET_NAME)).text())
 }
 
-async fn download_tunnel_binary(url: &str) -> Result<Vec<u8>, String> {
-    let response = reqwest::get(url)
-        .await
-        .map_err(|error| LogMessage::TunnelDownloadFailed(error.to_string()).text())?;
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| LogMessage::TunnelDownloadFailed(error.to_string()).text())?;
-    Ok(bytes.to_vec())
-}
-
-fn write_tunnel_binary_to_disk(writable_path: &PathBuf, binary: &[u8]) -> Result<(), String> {
+fn write_tunnel_binary_to_disk(app: &AppHandle, writable_path: &PathBuf, binary: &[u8]) -> Result<(), String> {
     let parent = writable_path
         .parent()
         .ok_or_else(|| LogMessage::TunnelDataDirResolveFailed.text())?;
     std::fs::create_dir_all(parent)
         .map_err(|_| LogMessage::TunnelInstallFailed(writable_path.display().to_string()).text())?;
 
+    emit_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::RemovingOld);
+
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, binary)
         .map_err(|_| LogMessage::TunnelInstallFailed(writable_path.display().to_string()).text())?;
+
+    emit_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
     std::fs::rename(&temp_path, writable_path)
         .map_err(|_| LogMessage::TunnelInstallFailed(writable_path.display().to_string()).text())
 }
 
 async fn install_latest_tunnel_binary(app: &AppHandle) -> Result<String, String> {
+    emit_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
     let release = fetch_latest_tunnel_release().await?;
     let download_url = extract_tunnel_download_url(&release)?;
-    let binary = download_tunnel_binary(&download_url).await?;
+    let binary = download_with_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, &download_url)
+        .await
+        .map_err(|error| LogMessage::TunnelDownloadFailed(error).text())?;
 
     let writable_path = resolve_writable_tunnel_path(app)?;
-    write_tunnel_binary_to_disk(&writable_path, &binary)?;
+    write_tunnel_binary_to_disk(app, &writable_path, &binary)?;
     write_installed_version(app, &release.tag_name)?;
 
     println!("{}", LogMessage::TunnelInstalled(release.tag_name.clone()).text());
@@ -222,6 +230,7 @@ async fn try_sync_tunnel_with_config(app: &AppHandle) -> Result<(), String> {
     }
 
     ensure_tunnel_binary_up_to_date(app).await?;
+    emit_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
     spawn_tunnel_with_token(app, &token)
 }
 
@@ -242,7 +251,22 @@ pub async fn check_tunnel_update(app: AppHandle) -> Result<TunnelUpdateInfo, Str
 
 #[tauri::command]
 pub async fn restart_managed_tunnel(app: AppHandle) -> Result<TunnelStatus, String> {
-    try_sync_tunnel_with_config(&app).await?;
+    match try_sync_tunnel_with_config(&app).await {
+        Ok(()) => {
+            let latest_version = read_installed_version(&app).unwrap_or_default();
+            emit_progress(&app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version });
+        }
+        Err(error) => {
+            emit_progress(&app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+            return Err(error);
+        }
+    }
+    Ok(get_tunnel_status(app))
+}
+
+#[tauri::command]
+pub fn stop_managed_tunnel(app: AppHandle) -> Result<TunnelStatus, String> {
+    kill_running_tunnel(&app)?;
     Ok(get_tunnel_status(app))
 }
 

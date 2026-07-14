@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getClientEnvironment } from '../lib/environment';
+import { useUpdateProgress } from './useUpdateProgress';
 
-export type BackendUpdaterStatus = 'idle' | 'checking' | 'ready' | 'installing' | 'uninstalling' | 'starting' | 'error';
+export type BackendUpdaterStatus = 'idle' | 'checking' | 'ready' | 'installing' | 'uninstalling' | 'starting' | 'stopping' | 'restarting' | 'error';
+
+const BACKEND_UPDATE_PROGRESS_EVENT = 'backend-update-progress';
 
 interface BackendStatusResponse {
   running: boolean;
@@ -22,6 +25,7 @@ export function useBackendUpdater() {
   const [isRunning, setIsRunning] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const { progress, reset: resetProgress } = useUpdateProgress(BACKEND_UPDATE_PROGRESS_EVENT);
 
   const applyBackendStatus = useCallback((backendStatus: BackendStatusResponse) => {
     setIsInstalled(backendStatus.installed);
@@ -61,6 +65,7 @@ export function useBackendUpdater() {
 
   const installNow = useCallback(async () => {
     setStatus('installing');
+    resetProgress();
     try {
       const backendStatus = await invoke<BackendStatusResponse>('install_backend_update');
       applyBackendStatus(backendStatus);
@@ -70,7 +75,7 @@ export function useBackendUpdater() {
       console.warn('[BACKEND_UPDATER] failed to install backend update', error);
       setStatus('error');
     }
-  }, [applyBackendStatus]);
+  }, [applyBackendStatus, resetProgress]);
 
   const startNow = useCallback(async () => {
     setStatus('starting');
@@ -80,6 +85,30 @@ export function useBackendUpdater() {
       setStatus('idle');
     } catch (error) {
       console.warn('[BACKEND_UPDATER] failed to start backend', error);
+      setStatus('error');
+    }
+  }, [applyBackendStatus]);
+
+  const stopNow = useCallback(async () => {
+    setStatus('stopping');
+    try {
+      const backendStatus = await invoke<BackendStatusResponse>('stop_backend');
+      applyBackendStatus(backendStatus);
+      setStatus('idle');
+    } catch (error) {
+      console.warn('[BACKEND_UPDATER] failed to stop backend', error);
+      setStatus('error');
+    }
+  }, [applyBackendStatus]);
+
+  const restartNow = useCallback(async () => {
+    setStatus('restarting');
+    try {
+      const backendStatus = await invoke<BackendStatusResponse>('restart_backend');
+      applyBackendStatus(backendStatus);
+      setStatus('idle');
+    } catch (error) {
+      console.warn('[BACKEND_UPDATER] failed to restart backend', error);
       setStatus('error');
     }
   }, [applyBackendStatus]);
@@ -107,9 +136,12 @@ export function useBackendUpdater() {
     isRunning,
     currentVersion,
     latestVersion,
+    progress,
     runCheck,
     installNow,
     startNow,
+    stopNow,
+    restartNow,
     uninstallNow,
     dismiss,
   };
