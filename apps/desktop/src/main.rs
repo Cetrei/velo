@@ -132,8 +132,13 @@ fn spawn_backend_on_setup(app: &tauri::AppHandle) {
     }
 }
 
+fn stop_all_managed_processes(app: &tauri::AppHandle) {
+    backend_manager::stop_backend_before_exit(app);
+    tunnel_manager::stop_tunnel_before_exit(app);
+}
+
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_existing_window(app);
         }))
@@ -163,6 +168,12 @@ fn main() {
             tunnel_manager::sync_tunnel_with_config(app.handle());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running velo-desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building velo-desktop");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            stop_all_managed_processes(app_handle);
+        }
+    });
 }

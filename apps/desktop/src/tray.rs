@@ -1,4 +1,3 @@
-use crate::backend_manager::BackendState;
 use crate::log_messages::LogMessage;
 use crate::tunnel_manager;
 use tauri::menu::{Menu, MenuItem};
@@ -34,9 +33,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 }
 
 fn stop_backend_before_exit(app: &AppHandle) {
-    if let Some(mut child) = app.state::<BackendState>().0.lock().unwrap().take() {
-        let _ = child.kill();
-    }
+    crate::backend_manager::stop_backend_before_exit(app);
     tunnel_manager::stop_tunnel_before_exit(app);
 }
 

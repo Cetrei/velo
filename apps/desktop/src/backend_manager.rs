@@ -1,5 +1,6 @@
 use crate::log_messages::LogMessage;
 use serde::{Deserialize, Serialize};
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Mutex;
@@ -9,6 +10,7 @@ const BACKEND_BINARY_FILENAME: &str = "velo-backend.exe";
 const GITHUB_API_ACCEPT_HEADER: &str = "application/vnd.github+json";
 const GITHUB_USER_AGENT: &str = "velo-desktop-backend-manager";
 const BACKEND_TAG_PREFIX: &str = "backend-v";
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct BackendState(pub Mutex<Option<Child>>);
 
@@ -92,12 +94,19 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), String> {
 
     let child = std::process::Command::new(&writable_path)
         .env("VELO_CONFIG_DIR", config_dir)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|error| LogMessage::BackendSpawnFailed(error.to_string()).text())?;
 
     println!("{}", LogMessage::BackendSpawned(writable_path.display().to_string()).text());
     app.state::<BackendState>().0.lock().unwrap().replace(child);
     Ok(())
+}
+
+pub fn stop_backend_before_exit(app: &AppHandle) {
+    if let Some(mut child) = app.state::<BackendState>().0.lock().unwrap().take() {
+        let _ = child.kill();
+    }
 }
 
 fn kill_running_backend(app: &AppHandle) -> Result<(), String> {

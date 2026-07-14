@@ -1,5 +1,6 @@
 use crate::log_messages::LogMessage;
 use serde::{Deserialize, Serialize};
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Mutex;
@@ -11,6 +12,7 @@ const GITHUB_API_ACCEPT_HEADER: &str = "application/vnd.github+json";
 const GITHUB_USER_AGENT: &str = "velo-desktop-tunnel-manager";
 const WINDOWS_ASSET_NAME: &str = "cloudflared-windows-amd64.exe";
 const VERSION_FILE_NAME: &str = "cloudflared.version";
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub struct TunnelState(pub Mutex<Option<Child>>);
 
@@ -192,6 +194,7 @@ fn spawn_tunnel_with_token(app: &AppHandle, token: &str) -> Result<(), String> {
 
     let child = std::process::Command::new(&binary_path)
         .args(["tunnel", "run", "--token", token])
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|error| LogMessage::TunnelSpawnFailed(error.to_string()).text())?;
 
@@ -244,5 +247,9 @@ pub async fn restart_managed_tunnel(app: AppHandle) -> Result<TunnelStatus, Stri
 }
 
 pub fn stop_tunnel_before_exit(app: &AppHandle) {
+    let is_managed = read_managed_tunnel_settings(app).map(|(managed, _)| managed).unwrap_or(false);
+    if !is_managed {
+        return;
+    }
     let _ = kill_running_tunnel(app);
 }
