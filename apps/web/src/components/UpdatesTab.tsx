@@ -41,7 +41,11 @@ const STATE_DESCRIPTIONS: Record<RowVisualState, string> = {
 
 function StateIcon({ state }: { state: RowVisualState }) {
   const Icon = STATE_ICONS[state];
-  return <Icon size={18} className={STATE_ICON_STYLES[state]} strokeWidth={2} title={STATE_DESCRIPTIONS[state]} />;
+  return (
+    <span title={STATE_DESCRIPTIONS[state]}>
+      <Icon size={18} className={STATE_ICON_STYLES[state]} strokeWidth={2} />
+    </span>
+  );
 }
 
 interface UpdateRowProps {
