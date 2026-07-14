@@ -33,7 +33,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 }
 
 fn stop_backend_before_exit(app: &AppHandle) {
-    crate::backend_manager::stop_backend_before_exit(app);
+    crate::server_manager::stop_backend_before_exit(app);
     tunnel_manager::stop_tunnel_before_exit(app);
 }
 

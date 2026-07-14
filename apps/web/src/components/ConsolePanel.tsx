@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import { Copy, Check, Play, Square, RotateCw, Loader2, Terminal, FolderInput } from 'lucide-react';
-import { useBackendUpdater } from '../hooks/useBackendUpdater';
+import { useServerUpdater } from '../hooks/useServerUpdater';
 import { useTunnelStatus } from '../hooks/useTunnelStatus';
 import { useConfig } from '../hooks/useConfig';
 import { getClientEnvironment } from '../lib/environment';
 import { describeProgressPhase, progressPhaseFraction, type UpdateProgressEvent } from '../hooks/useUpdateProgress';
 import { DevLogList } from './DevLogList';
 
-type ConsoleTabId = 'app' | 'backend' | 'tunnel';
+type ConsoleTabId = 'app' | 'server' | 'tunnel';
 
 function useCopyToClipboard(): [boolean, (text: string) => void] {
   const [didCopy, setDidCopy] = useState(false);
@@ -126,17 +126,17 @@ function ProcessControls({ isRunning, isBusy, disabled, disabledReason, onStart,
   );
 }
 
-interface SideloadBackendControlProps {
+interface SideloadServerControlProps {
   isBusy: boolean;
   onSelectFile: (file: File) => void;
 }
 
-/// Lets a developer point the backend updater at a locally built exe
+/// Lets a developer point the server updater at a locally built exe
 /// instead of a GitHub release. Reads the file's bytes directly in the
 /// browser via the File API rather than opening a native file dialog,
 /// since Tauri doesn't expose real filesystem paths to the webview and
 /// this avoids pulling in the separate dialog plugin for a dev-only tool.
-function SideloadBackendControl({ isBusy, onSelectFile }: SideloadBackendControlProps) {
+function SideloadServerControl({ isBusy, onSelectFile }: SideloadServerControlProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -148,14 +148,14 @@ function SideloadBackendControl({ isBusy, onSelectFile }: SideloadBackendControl
   return (
     <>
       <input ref={fileInputRef} type="file" accept=".exe" className="hidden" onChange={handleFileChange} />
-      <ProcessControlButton onClick={() => fileInputRef.current?.click()} disabled={isBusy} title="Install a local backend exe (dev only)">
+      <ProcessControlButton onClick={() => fileInputRef.current?.click()} disabled={isBusy} title="Install a local server exe (dev only)">
         <FolderInput size={13} />
       </ProcessControlButton>
     </>
   );
 }
 
-function BackendConsoleTab() {
+function ServerConsoleTab() {
   const {
     status,
     isInstalled,
@@ -168,22 +168,22 @@ function BackendConsoleTab() {
     restartNow,
     uninstallNow,
     installFromFile,
-  } = useBackendUpdater();
+  } = useServerUpdater();
   const { config, saveConfig } = useConfig();
   const text = `status=${status} installed=${isInstalled} running=${isRunning} current=${currentVersion ?? 'n/a'} latest=${latestVersion ?? 'n/a'}`;
   const isBusy = status === 'installing' || status === 'starting' || status === 'stopping' || status === 'restarting' || status === 'uninstalling';
-  const autostartEnabled = config?.backend?.enabled ?? true;
+  const autostartEnabled = config?.server?.enabled ?? true;
 
   function toggleAutostart(nextEnabled: boolean) {
     if (!config) return;
-    saveConfig({ ...config, backend: { enabled: nextEnabled } });
+    saveConfig({ ...config, server: { enabled: nextEnabled } });
   }
 
   return (
     <StatusBlock
-      title="Backend status"
+      title="Server status"
       text={text}
-      note="Live stdout from the Backend process is not piped into the app yet, see the Flags note for this session."
+      note="Live stdout from the Server process is not piped into the app yet, see the Flags note for this session."
     >
       <div className="flex items-center justify-between gap-3 font-sans">
         <div className="flex items-center gap-1.5">
@@ -191,12 +191,12 @@ function BackendConsoleTab() {
             isRunning={isRunning}
             isBusy={isBusy}
             disabled={!isInstalled}
-            disabledReason="Install the backend first from Updates"
+            disabledReason="Install the server first from Updates"
             onStart={startNow}
             onStop={stopNow}
             onRestart={restartNow}
           />
-          <SideloadBackendControl isBusy={isBusy} onSelectFile={installFromFile} />
+          <SideloadServerControl isBusy={isBusy} onSelectFile={installFromFile} />
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-velo-text-secondary">
@@ -256,7 +256,7 @@ function TunnelConsoleTab() {
 }
 
 function resolveTabs(environment: ReturnType<typeof getClientEnvironment>): ConsoleTabId[] {
-  if (environment === 'DESKTOP_VIEWER') return ['app', 'backend', 'tunnel'];
+  if (environment === 'DESKTOP_VIEWER') return ['app', 'server', 'tunnel'];
   return ['app'];
 }
 
@@ -293,7 +293,7 @@ export function ConsolePanel() {
       </div>
       <ConsoleTabBar tabs={tabs} activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'app' && <DevLogList />}
-      {activeTab === 'backend' && <BackendConsoleTab />}
+      {activeTab === 'server' && <ServerConsoleTab />}
       {activeTab === 'tunnel' && <TunnelConsoleTab />}
     </div>
   );

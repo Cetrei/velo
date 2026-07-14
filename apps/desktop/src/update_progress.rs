@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
-pub const BACKEND_UPDATE_PROGRESS_EVENT: &str = "backend-update-progress";
+pub const SERVER_UPDATE_PROGRESS_EVENT: &str = "server-update-progress";
 pub const TUNNEL_UPDATE_PROGRESS_EVENT: &str = "tunnel-update-progress";
 
 const PROGRESS_EMIT_INTERVAL_MS: u128 = 150;

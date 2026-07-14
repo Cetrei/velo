@@ -15,38 +15,38 @@ pub enum LogMessage {
     CloseSplashscreenInvoked,
     SplashscreenWindowMissing,
     SplashscreenClosedFromMainShow,
-    BackendSeedFailed(String),
-    BackendSpawnFailed(String),
-    BackendSpawned(String),
-    BackendKillFailed,
-    BackendVersionCheckFailed(String),
-    BackendReleaseFetchFailed(String),
-    BackendDownloadFailed(String),
-    BackendReplaceFailed(String),
-    BackendReplaceRetrying(u32, String),
-    BackendUpdateInstalled(String, String),
-    BackendUpdateRolledBack(String),
-    BackendUpdateCancelled,
-    BackendDataDirResolveFailed,
-    BackendUninstallFailed(String),
-    BackendUninstallRetrying(u32, String),
-    BackendUninstalled,
-    BackendStartupSkippedDisabled,
-    BackendKillAttempt(u32),
-    BackendKillSucceeded(u32),
-    BackendSpawnedWithPid(u32),
-    BackendVersionFetchAttempt(String),
-    BackendVersionFetchResult(String, String),
-    BackendVersionFetchUnreachable(String),
-    BackendOrphanKillSucceeded,
-    BackendOrphanKillNoneFound,
-    BackendOrphanKillFailed(String),
-    BackendVersionUrlUnresolved(String),
-    BackendVersionHttpClientBuildFailed(String),
-    BackendVersionNonSuccessStatus(String, String),
-    BackendVersionBodyUnreadable(String, String),
-    BackendVersionUnexpectedShape(String, String, String),
-    BackendVersionIsDevFallback(String),
+    ServerSeedFailed(String),
+    ServerSpawnFailed(String),
+    ServerSpawned(String),
+    ServerKillFailed,
+    ServerVersionCheckFailed(String),
+    ServerReleaseFetchFailed(String),
+    ServerDownloadFailed(String),
+    ServerReplaceFailed(String),
+    ServerReplaceRetrying(u32, String),
+    ServerUpdateInstalled(String, String),
+    ServerUpdateRolledBack(String),
+    ServerUpdateCancelled,
+    ServerDataDirResolveFailed,
+    ServerUninstallFailed(String),
+    ServerUninstallRetrying(u32, String),
+    ServerUninstalled,
+    ServerStartupSkippedDisabled,
+    ServerKillAttempt(u32),
+    ServerKillSucceeded(u32),
+    ServerSpawnedWithPid(u32),
+    ServerVersionFetchAttempt(String),
+    ServerVersionFetchResult(String, String),
+    ServerVersionFetchUnreachable(String),
+    ServerOrphanKillSucceeded,
+    ServerOrphanKillNoneFound,
+    ServerOrphanKillFailed(String),
+    ServerVersionUrlUnresolved(String),
+    ServerVersionHttpClientBuildFailed(String),
+    ServerVersionNonSuccessStatus(String, String),
+    ServerVersionBodyUnreadable(String, String),
+    ServerVersionUnexpectedShape(String, String, String),
+    ServerVersionIsDevFallback(String),
     TunnelSpawnFailed(String),
     TunnelSpawned,
     TunnelKillFailed,
@@ -112,102 +112,102 @@ impl LogMessage {
             LogMessage::SplashscreenClosedFromMainShow => {
                 "[DESKTOP] splashscreen force-closed as a fallback when main window was shown via tray or duplicate-instance focus".to_string()
             }
-            LogMessage::BackendSeedFailed(path) => {
-                format!("[BACKEND_MANAGER] Failed to seed writable backend binary at {path}")
+            LogMessage::ServerSeedFailed(path) => {
+                format!("[SERVER_MANAGER] Failed to seed writable backend binary at {path}")
             }
-            LogMessage::BackendSpawnFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to spawn backend sidecar: {reason}")
+            LogMessage::ServerSpawnFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to spawn backend sidecar: {reason}")
             }
-            LogMessage::BackendSpawned(path) => {
-                format!("[BACKEND_MANAGER] Backend sidecar spawned from {path}")
+            LogMessage::ServerSpawned(path) => {
+                format!("[SERVER_MANAGER] Backend sidecar spawned from {path}")
             }
-            LogMessage::BackendKillFailed => {
-                "[BACKEND_MANAGER] Failed to kill the running backend sidecar before replacing its binary".to_string()
+            LogMessage::ServerKillFailed => {
+                "[SERVER_MANAGER] Failed to kill the running backend sidecar before replacing its binary".to_string()
             }
-            LogMessage::BackendVersionCheckFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to read running backend version: {reason}")
+            LogMessage::ServerVersionCheckFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to read running backend version: {reason}")
             }
-            LogMessage::BackendReleaseFetchFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to fetch latest backend-v* release from GitHub: {reason}")
+            LogMessage::ServerReleaseFetchFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to fetch latest backend-v* release from GitHub: {reason}")
             }
-            LogMessage::BackendDownloadFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to download new backend binary: {reason}")
+            LogMessage::ServerDownloadFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to download new backend binary: {reason}")
             }
-            LogMessage::BackendReplaceFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to replace backend binary on disk: {reason}")
+            LogMessage::ServerReplaceFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to replace backend binary on disk: {reason}")
             }
-            LogMessage::BackendReplaceRetrying(attempt, reason) => {
-                format!("[BACKEND_MANAGER] Backend binary still locked by the OS after exit, retrying rename (attempt {attempt}): {reason}")
+            LogMessage::ServerReplaceRetrying(attempt, reason) => {
+                format!("[SERVER_MANAGER] Backend binary still locked by the OS after exit, retrying rename (attempt {attempt}): {reason}")
             }
-            LogMessage::BackendUpdateInstalled(from, to) => {
-                format!("[BACKEND_MANAGER] Backend updated from {from} to {to} and restarted")
+            LogMessage::ServerUpdateInstalled(from, to) => {
+                format!("[SERVER_MANAGER] Backend updated from {from} to {to} and restarted")
             }
-            LogMessage::BackendUpdateRolledBack(reason) => {
-                format!("[BACKEND_MANAGER] Backend update failed and was rolled back to the previous binary: {reason}")
+            LogMessage::ServerUpdateRolledBack(reason) => {
+                format!("[SERVER_MANAGER] Backend update failed and was rolled back to the previous binary: {reason}")
             }
-            LogMessage::BackendUpdateCancelled => {
-                "[BACKEND_MANAGER] Backend update cancelled by user request".to_string()
+            LogMessage::ServerUpdateCancelled => {
+                "[SERVER_MANAGER] Backend update cancelled by user request".to_string()
             }
-            LogMessage::BackendDataDirResolveFailed => {
-                "[BACKEND_MANAGER] Failed to resolve the app data directory for the writable backend binary".to_string()
+            LogMessage::ServerDataDirResolveFailed => {
+                "[SERVER_MANAGER] Failed to resolve the app data directory for the writable backend binary".to_string()
             }
-            LogMessage::BackendUninstallFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to remove backend binary and data directory: {reason}")
+            LogMessage::ServerUninstallFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to remove backend binary and data directory: {reason}")
             }
-            LogMessage::BackendUninstallRetrying(attempt, reason) => {
-                format!("[BACKEND_MANAGER] Backend directory still locked by the OS after exit, retrying removal (attempt {attempt}): {reason}")
+            LogMessage::ServerUninstallRetrying(attempt, reason) => {
+                format!("[SERVER_MANAGER] Backend directory still locked by the OS after exit, retrying removal (attempt {attempt}): {reason}")
             }
-            LogMessage::BackendUninstalled => {
-                "[BACKEND_MANAGER] Backend uninstalled, binary and data directory removed".to_string()
+            LogMessage::ServerUninstalled => {
+                "[SERVER_MANAGER] Backend uninstalled, binary and data directory removed".to_string()
             }
-            LogMessage::BackendStartupSkippedDisabled => {
-                "[BACKEND_MANAGER] Backend autostart skipped, disabled in user.yml (backend.enabled = false)".to_string()
+            LogMessage::ServerStartupSkippedDisabled => {
+                "[SERVER_MANAGER] Backend autostart skipped, disabled in user.yml (server.enabled = false)".to_string()
             }
-            LogMessage::BackendKillAttempt(pid) => {
-                format!("[BACKEND_MANAGER] Killing running backend sidecar, pid={pid}")
+            LogMessage::ServerKillAttempt(pid) => {
+                format!("[SERVER_MANAGER] Killing running backend sidecar, pid={pid}")
             }
-            LogMessage::BackendKillSucceeded(pid) => {
-                format!("[BACKEND_MANAGER] Backend sidecar pid={pid} confirmed exited")
+            LogMessage::ServerKillSucceeded(pid) => {
+                format!("[SERVER_MANAGER] Backend sidecar pid={pid} confirmed exited")
             }
-            LogMessage::BackendSpawnedWithPid(pid) => {
-                format!("[BACKEND_MANAGER] New backend sidecar process started, pid={pid}")
+            LogMessage::ServerSpawnedWithPid(pid) => {
+                format!("[SERVER_MANAGER] New backend sidecar process started, pid={pid}")
             }
-            LogMessage::BackendVersionFetchAttempt(url) => {
-                format!("[BACKEND_MANAGER] Fetching running backend version from {url}")
+            LogMessage::ServerVersionFetchAttempt(url) => {
+                format!("[SERVER_MANAGER] Fetching running backend version from {url}")
             }
-            LogMessage::BackendVersionFetchResult(url, version) => {
-                format!("[BACKEND_MANAGER] {url} responded with version={version}")
+            LogMessage::ServerVersionFetchResult(url, version) => {
+                format!("[SERVER_MANAGER] {url} responded with version={version}")
             }
-            LogMessage::BackendVersionFetchUnreachable(url) => {
-                format!("[BACKEND_MANAGER] {url} did not respond, backend may still be starting or is not running")
+            LogMessage::ServerVersionFetchUnreachable(url) => {
+                format!("[SERVER_MANAGER] {url} did not respond, backend may still be starting or is not running")
             }
-            LogMessage::BackendOrphanKillSucceeded => {
-                "[BACKEND_MANAGER] taskkill found and terminated a running backend sidecar not tracked by this app instance".to_string()
+            LogMessage::ServerOrphanKillSucceeded => {
+                "[SERVER_MANAGER] taskkill found and terminated a running backend sidecar not tracked by this app instance".to_string()
             }
-            LogMessage::BackendOrphanKillNoneFound => {
-                "[BACKEND_MANAGER] taskkill found no running backend sidecar process to terminate".to_string()
+            LogMessage::ServerOrphanKillNoneFound => {
+                "[SERVER_MANAGER] taskkill found no running backend sidecar process to terminate".to_string()
             }
-            LogMessage::BackendOrphanKillFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to run taskkill against the backend sidecar: {reason}")
+            LogMessage::ServerOrphanKillFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to run taskkill against the backend sidecar: {reason}")
             }
-            LogMessage::BackendVersionUrlUnresolved(reason) => {
-                format!("[BACKEND_MANAGER] Cannot check running backend version, {reason}")
+            LogMessage::ServerVersionUrlUnresolved(reason) => {
+                format!("[SERVER_MANAGER] Cannot check running backend version, {reason}")
             }
-            LogMessage::BackendVersionHttpClientBuildFailed(reason) => {
-                format!("[BACKEND_MANAGER] Failed to build HTTP client for version check: {reason}")
+            LogMessage::ServerVersionHttpClientBuildFailed(reason) => {
+                format!("[SERVER_MANAGER] Failed to build HTTP client for version check: {reason}")
             }
-            LogMessage::BackendVersionNonSuccessStatus(url, status) => {
-                format!("[BACKEND_MANAGER] {url} responded with non-success HTTP status {status}, treating backend as not running")
+            LogMessage::ServerVersionNonSuccessStatus(url, status) => {
+                format!("[SERVER_MANAGER] {url} responded with non-success HTTP status {status}, treating backend as not running")
             }
-            LogMessage::BackendVersionBodyUnreadable(url, reason) => {
-                format!("[BACKEND_MANAGER] {url} response body could not be read: {reason}")
+            LogMessage::ServerVersionBodyUnreadable(url, reason) => {
+                format!("[SERVER_MANAGER] {url} response body could not be read: {reason}")
             }
-            LogMessage::BackendVersionUnexpectedShape(url, reason, raw_body) => {
-                format!("[BACKEND_MANAGER] {url} response was not the expected JSON shape (a {{\"version\": string}} object): {reason}. Raw body: {raw_body}")
+            LogMessage::ServerVersionUnexpectedShape(url, reason, raw_body) => {
+                format!("[SERVER_MANAGER] {url} response was not the expected JSON shape (a {{\"version\": string}} object): {reason}. Raw body: {raw_body}")
             }
-            LogMessage::BackendVersionIsDevFallback(url) => {
+            LogMessage::ServerVersionIsDevFallback(url) => {
                 format!(
-                    "[BACKEND_MANAGER] {url} responded with the dev fallback version 0.0.0-dev. This means the running velo-backend.exe was compiled without VELO_BACKEND_VERSION set at build time (check that apps/server/package.json has a real version and that `bun run compile` embeds it)."
+                    "[SERVER_MANAGER] {url} responded with the dev fallback version 0.0.0-dev. This means the running velo-backend.exe was compiled without VELO_BACKEND_VERSION set at build time (check that apps/server/package.json has a real version and that `bun run compile` embeds it)."
                 )
             }
             LogMessage::TunnelSpawnFailed(reason) => {

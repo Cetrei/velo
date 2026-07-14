@@ -177,10 +177,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`",
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-install-backend-from-bytes`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`"
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-install-backend-from-bytes`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`"
         },
         {
           "description": "Allows cancelling an in-progress backend download or installation.",
@@ -229,6 +229,12 @@
           "type": "string",
           "const": "allow-get-user-config",
           "markdownDescription": "Allows reading the user's writable user.yml config."
+        },
+        {
+          "description": "Allows installing a developer-supplied backend binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only.",
+          "type": "string",
+          "const": "allow-install-backend-from-bytes",
+          "markdownDescription": "Allows installing a developer-supplied backend binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only."
         },
         {
           "description": "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process.",

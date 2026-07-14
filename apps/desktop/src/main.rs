@@ -1,14 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod backend_manager;
 mod config;
 mod log_messages;
+mod server_manager;
 mod tray;
 mod tunnel_manager;
 mod update_progress;
 
-use backend_manager::{BackendState, BackendUpdateCancellation};
 use log_messages::LogMessage;
+use server_manager::{ServerState, ServerUpdateCancellation};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Manager, WindowEvent};
@@ -112,11 +112,11 @@ fn handle_main_window_event(app: &tauri::AppHandle, event: &WindowEvent) {
     println!("{}", LogMessage::WindowHiddenToTray.text());
 }
 
-fn should_autostart_backend(app: &tauri::AppHandle) -> bool {
+fn should_autostart_server(app: &tauri::AppHandle) -> bool {
     match config::get_user_config(app) {
         Ok(user_config) => user_config
-            .get("backend")
-            .and_then(|backend| backend.get("enabled"))
+            .get("server")
+            .and_then(|server| server.get("enabled"))
             .and_then(|value| value.as_bool())
             .unwrap_or(true),
         Err(_) => true,
@@ -124,17 +124,17 @@ fn should_autostart_backend(app: &tauri::AppHandle) -> bool {
 }
 
 fn spawn_backend_on_setup(app: &tauri::AppHandle) {
-    if !should_autostart_backend(app) {
-        println!("{}", LogMessage::BackendStartupSkippedDisabled.text());
+    if !should_autostart_server(app) {
+        println!("{}", LogMessage::ServerStartupSkippedDisabled.text());
         return;
     }
-    if let Err(error) = backend_manager::spawn_backend(app) {
+    if let Err(error) = server_manager::spawn_backend(app) {
         eprintln!("{error}");
     }
 }
 
 fn stop_all_managed_processes(app: &tauri::AppHandle) {
-    backend_manager::stop_backend_before_exit(app);
+    server_manager::stop_backend_before_exit(app);
     tunnel_manager::stop_tunnel_before_exit(app);
 }
 
@@ -145,8 +145,8 @@ fn main() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(BackendState(Mutex::new(None)))
-        .manage(BackendUpdateCancellation(Mutex::new(None)))
+        .manage(ServerState(Mutex::new(None)))
+        .manage(ServerUpdateCancellation(Mutex::new(None)))
         .manage(TunnelState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             push_frame,
@@ -154,15 +154,15 @@ fn main() {
             get_user_config,
             save_user_config,
             close_splashscreen,
-            backend_manager::get_backend_status,
-            backend_manager::check_backend_update,
-            backend_manager::install_backend_update,
-            backend_manager::install_backend_from_bytes,
-            backend_manager::cancel_backend_update,
-            backend_manager::start_backend,
-            backend_manager::restart_backend,
-            backend_manager::stop_backend,
-            backend_manager::uninstall_backend,
+            server_manager::get_server_status,
+            server_manager::check_server_update,
+            server_manager::install_server_update,
+            server_manager::install_server_from_bytes,
+            server_manager::cancel_server_update,
+            server_manager::start_server,
+            server_manager::restart_server,
+            server_manager::stop_server,
+            server_manager::uninstall_server,
             tunnel_manager::get_tunnel_status,
             tunnel_manager::check_tunnel_update,
             tunnel_manager::restart_managed_tunnel,

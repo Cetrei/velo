@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getClientEnvironment } from '../lib/environment';
 import { useUpdateProgress } from './useUpdateProgress';
 
-export type BackendUpdaterStatus =
+export type ServerUpdaterStatus =
   | 'idle'
   | 'checking'
   | 'ready'
@@ -15,55 +15,55 @@ export type BackendUpdaterStatus =
   | 'restarting'
   | 'error';
 
-const BACKEND_UPDATE_PROGRESS_EVENT = 'backend-update-progress';
+const SERVER_UPDATE_PROGRESS_EVENT = 'server-update-progress';
 
-interface BackendStatusResponse {
+interface ServerStatusResponse {
   running: boolean;
   installed: boolean;
   version: string | null;
 }
 
-interface BackendUpdateInfoResponse {
+interface ServerUpdateInfoResponse {
   available: boolean;
   current_version: string | null;
   latest_version: string | null;
 }
 
-export function useBackendUpdater() {
-  const [status, setStatus] = useState<BackendUpdaterStatus>('idle');
+export function useServerUpdater() {
+  const [status, setStatus] = useState<ServerUpdaterStatus>('idle');
   const [isInstalled, setIsInstalled] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
-  const { progress, reset: resetProgress } = useUpdateProgress(BACKEND_UPDATE_PROGRESS_EVENT);
+  const { progress, reset: resetProgress } = useUpdateProgress(SERVER_UPDATE_PROGRESS_EVENT);
 
-  const applyBackendStatus = useCallback((backendStatus: BackendStatusResponse) => {
-    setIsInstalled(backendStatus.installed);
-    setIsRunning(backendStatus.running);
-    setCurrentVersion(backendStatus.version);
+  const applyServerStatus = useCallback((serverStatus: ServerStatusResponse) => {
+    setIsInstalled(serverStatus.installed);
+    setIsRunning(serverStatus.running);
+    setCurrentVersion(serverStatus.version);
   }, []);
 
   const loadRunningStatus = useCallback(async () => {
     if (getClientEnvironment() !== 'DESKTOP_VIEWER') return;
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('get_backend_status');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('get_server_status');
+      applyServerStatus(serverStatus);
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to read running backend status', error);
+      console.warn('[SERVER_UPDATER] failed to read running server status', error);
     }
-  }, [applyBackendStatus]);
+  }, [applyServerStatus]);
 
   const runCheck = useCallback(async () => {
     if (getClientEnvironment() !== 'DESKTOP_VIEWER') return;
 
     setStatus('checking');
     try {
-      const updateInfo = await invoke<BackendUpdateInfoResponse>('check_backend_update');
+      const updateInfo = await invoke<ServerUpdateInfoResponse>('check_server_update');
       setCurrentVersion(updateInfo.current_version);
       setLatestVersion(updateInfo.latest_version);
       setStatus(updateInfo.available ? 'ready' : 'idle');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to check for backend updates', error);
+      console.warn('[SERVER_UPDATER] failed to check for server updates', error);
       setStatus('error');
     }
   }, []);
@@ -77,8 +77,8 @@ export function useBackendUpdater() {
     setStatus('installing');
     resetProgress();
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('install_backend_update');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('install_server_update');
+      applyServerStatus(serverStatus);
       setLatestVersion(null);
       setStatus('idle');
     } catch (error) {
@@ -87,10 +87,10 @@ export function useBackendUpdater() {
         setStatus('cancelled');
         return;
       }
-      console.warn('[BACKEND_UPDATER] failed to install backend update', error);
+      console.warn('[SERVER_UPDATER] failed to install server update', error);
       setStatus('error');
     }
-  }, [applyBackendStatus, resetProgress]);
+  }, [applyServerStatus, resetProgress]);
 
   const installFromFile = useCallback(
     async (file: File) => {
@@ -98,74 +98,74 @@ export function useBackendUpdater() {
       resetProgress();
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const backendStatus = await invoke<BackendStatusResponse>('install_backend_from_bytes', { bytes: Array.from(bytes) });
-        applyBackendStatus(backendStatus);
+        const serverStatus = await invoke<ServerStatusResponse>('install_server_from_bytes', { bytes: Array.from(bytes) });
+        applyServerStatus(serverStatus);
         setLatestVersion(null);
         setStatus('idle');
       } catch (error) {
-        console.warn('[BACKEND_UPDATER] failed to install backend from a local file', error);
+        console.warn('[SERVER_UPDATER] failed to install server from a local file', error);
         setStatus('error');
       }
     },
-    [applyBackendStatus, resetProgress],
+    [applyServerStatus, resetProgress],
   );
 
   const startNow = useCallback(async () => {
     setStatus('starting');
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('start_backend');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('start_server');
+      applyServerStatus(serverStatus);
       setStatus('idle');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to start backend', error);
+      console.warn('[SERVER_UPDATER] failed to start server', error);
       setStatus('error');
     }
-  }, [applyBackendStatus]);
+  }, [applyServerStatus]);
 
   const stopNow = useCallback(async () => {
     setStatus('stopping');
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('stop_backend');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('stop_server');
+      applyServerStatus(serverStatus);
       setStatus('idle');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to stop backend', error);
+      console.warn('[SERVER_UPDATER] failed to stop server', error);
       setStatus('error');
     }
-  }, [applyBackendStatus]);
+  }, [applyServerStatus]);
 
   const restartNow = useCallback(async () => {
     setStatus('restarting');
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('restart_backend');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('restart_server');
+      applyServerStatus(serverStatus);
       setStatus('idle');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to restart backend', error);
+      console.warn('[SERVER_UPDATER] failed to restart server', error);
       setStatus('error');
     }
-  }, [applyBackendStatus]);
+  }, [applyServerStatus]);
 
   const cancelNow = useCallback(async () => {
     try {
-      await invoke('cancel_backend_update');
+      await invoke('cancel_server_update');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to cancel backend update', error);
+      console.warn('[SERVER_UPDATER] failed to cancel server update', error);
     }
   }, []);
 
   const uninstallNow = useCallback(async () => {
     setStatus('uninstalling');
     try {
-      const backendStatus = await invoke<BackendStatusResponse>('uninstall_backend');
-      applyBackendStatus(backendStatus);
+      const serverStatus = await invoke<ServerStatusResponse>('uninstall_server');
+      applyServerStatus(serverStatus);
       setLatestVersion(null);
       setStatus('idle');
     } catch (error) {
-      console.warn('[BACKEND_UPDATER] failed to uninstall backend', error);
+      console.warn('[SERVER_UPDATER] failed to uninstall server', error);
       setStatus('error');
     }
-  }, [applyBackendStatus]);
+  }, [applyServerStatus]);
 
   const dismiss = useCallback(() => {
     setStatus('idle');

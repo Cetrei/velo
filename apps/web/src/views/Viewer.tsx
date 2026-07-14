@@ -4,7 +4,7 @@ import { useWebRtc } from '../hooks/useWebRTC';
 import { useFramePusher } from '../hooks/useFramePusher';
 import { useConfig } from '../hooks/useConfig';
 import { useUpdater } from '../hooks/useUpdater';
-import { useBackendUpdater } from '../hooks/useBackendUpdater';
+import { useServerUpdater } from '../hooks/useServerUpdater';
 import { useSignalingUrl } from '../hooks/useSignalingUrl';
 import { buildPairingUrl, createPairing } from '../lib/pairing';
 import { resolveDesktopSections, type NavSectionId } from '../lib/navigation';
@@ -103,10 +103,10 @@ export function Viewer() {
   const { config } = useConfig();
   const devModeEnabled = config?.behavior.dev_mode_enabled ?? false;
   const desktopUpdater = useUpdater();
-  const backendUpdater = useBackendUpdater();
+  const serverUpdater = useServerUpdater();
   const { runCheck: runDesktopUpdateCheck } = desktopUpdater;
-  const { runCheck: runBackendUpdateCheck } = backendUpdater;
-  const hasUpdateBadge = desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
+  const { runCheck: runServerUpdateCheck } = serverUpdater;
+  const hasUpdateBadge = desktopUpdater.status === 'ready' || serverUpdater.status === 'ready';
   const isAppUpdateInstalling = desktopUpdater.status === 'installing';
   const sections = resolveDesktopSections(devModeEnabled);
 
@@ -142,8 +142,8 @@ export function Viewer() {
   useEffect(() => {
     if (connectionState !== 'failed') return;
     runDesktopUpdateCheck();
-    runBackendUpdateCheck();
-  }, [connectionState, runDesktopUpdateCheck, runBackendUpdateCheck]);
+    runServerUpdateCheck();
+  }, [connectionState, runDesktopUpdateCheck, runServerUpdateCheck]);
 
   const handleDisconnect = useCallback(() => {
     disconnect();
@@ -184,9 +184,9 @@ export function Viewer() {
   function renderActiveSection() {
     if (activeSection === 'connect') return renderConnectSection();
     if (activeSection === 'settings') return <SettingsPanel />;
-    if (activeSection === 'updates') return <UpdatesTab desktopUpdater={desktopUpdater} backendUpdater={backendUpdater} />;
+    if (activeSection === 'updates') return <UpdatesTab desktopUpdater={desktopUpdater} serverUpdater={serverUpdater} />;
     if (activeSection === 'console') return <ConsolePanel />;
-    return <AboutPanel desktopVersion={desktopUpdater.currentVersion} backendVersion={backendUpdater.currentVersion} />;
+    return <AboutPanel desktopVersion={desktopUpdater.currentVersion} backendVersion={serverUpdater.currentVersion} />;
   }
 
   return (

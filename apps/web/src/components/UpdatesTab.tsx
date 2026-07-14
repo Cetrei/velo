@@ -2,13 +2,13 @@ import type { LucideIcon } from 'lucide-react';
 import { CheckCircle2, CircleAlert, Download, Loader2, RefreshCw, XCircle, Sparkles } from 'lucide-react';
 import type { useUpdater } from '../hooks/useUpdater';
 import type { useAndroidUpdater } from '../hooks/useAndroidUpdater';
-import type { useBackendUpdater } from '../hooks/useBackendUpdater';
+import type { useServerUpdater } from '../hooks/useServerUpdater';
 import { getClientEnvironment } from '../lib/environment';
 import { describeProgressPhase, progressPhaseFraction, type UpdateProgressEvent } from '../hooks/useUpdateProgress';
 
 type DesktopUpdater = ReturnType<typeof useUpdater>;
 type AndroidUpdaterHook = ReturnType<typeof useAndroidUpdater>;
-type BackendUpdater = ReturnType<typeof useBackendUpdater>;
+type ServerUpdater = ReturnType<typeof useServerUpdater>;
 
 type RowVisualState = 'idle' | 'checking' | 'ready' | 'installing' | 'error' | 'cancelled';
 
@@ -228,7 +228,7 @@ function AndroidAppUpdateRow({ updater }: { updater: AndroidUpdaterHook }) {
   );
 }
 
-function describeBackendStatus(
+function describeServerStatus(
   status: string,
   isInstalled: boolean,
   currentVersion: string | null,
@@ -242,7 +242,7 @@ function describeBackendStatus(
   return currentVersion ? `Up to date, v${currentVersion}` : 'Installed';
 }
 
-function BackendUpdateRow({ updater }: { updater: BackendUpdater }) {
+function ServerUpdateRow({ updater }: { updater: ServerUpdater }) {
   const { status, isInstalled, currentVersion, latestVersion, progress, runCheck, installNow, cancelNow } = updater;
   const isChecking = status === 'checking';
   const isReady = status === 'ready';
@@ -250,9 +250,9 @@ function BackendUpdateRow({ updater }: { updater: BackendUpdater }) {
 
   return (
     <UpdateRow
-      label="Backend"
+      label="Server"
       visualState={toVisualState(status, isReady, isInstalling, isChecking)}
-      statusLabel={describeBackendStatus(status, isInstalled, currentVersion, latestVersion)}
+      statusLabel={describeServerStatus(status, isInstalled, currentVersion, latestVersion)}
       currentVersion={currentVersion}
       targetVersion={latestVersion}
       isChecking={isChecking}
@@ -262,18 +262,18 @@ function BackendUpdateRow({ updater }: { updater: BackendUpdater }) {
       onInstall={installNow}
       onCancel={cancelNow}
       progress={progress}
-      scopeNote="Only the backend is affected. Camera streaming can be briefly interrupted, but the rest of the app stays usable."
+      scopeNote="Only the server is affected. Camera streaming can be briefly interrupted, but the rest of the app stays usable."
     />
   );
 }
 
 interface UpdatesTabProps {
   desktopUpdater?: DesktopUpdater;
-  backendUpdater?: BackendUpdater;
+  serverUpdater?: ServerUpdater;
   androidUpdater?: AndroidUpdaterHook;
 }
 
-export function UpdatesTab({ desktopUpdater, backendUpdater, androidUpdater }: UpdatesTabProps) {
+export function UpdatesTab({ desktopUpdater, serverUpdater, androidUpdater }: UpdatesTabProps) {
   const environment = getClientEnvironment();
 
   return (
@@ -284,7 +284,7 @@ export function UpdatesTab({ desktopUpdater, backendUpdater, androidUpdater }: U
       </div>
       <div className="flex flex-col gap-2">
         {environment === 'DESKTOP_VIEWER' && desktopUpdater && <DesktopAppUpdateRow updater={desktopUpdater} />}
-        {environment === 'DESKTOP_VIEWER' && backendUpdater && <BackendUpdateRow updater={backendUpdater} />}
+        {environment === 'DESKTOP_VIEWER' && serverUpdater && <ServerUpdateRow updater={serverUpdater} />}
         {environment === 'MOBILE_HOST' && androidUpdater && <AndroidAppUpdateRow updater={androidUpdater} />}
         {environment === 'WEB_SANDBOX' && (
           <p className="text-sm text-velo-text-secondary">Updates are only available in the Desktop or Android apps.</p>

@@ -1,6 +1,6 @@
 use crate::log_messages::LogMessage;
 use crate::update_progress::{
-    download_with_progress, emit_progress, request_timeout, CancellationToken, DownloadError, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT,
+    download_with_progress, emit_progress, request_timeout, CancellationToken, DownloadError, UpdateProgress, SERVER_UPDATE_PROGRESS_EVENT,
 };
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
@@ -22,18 +22,18 @@ const BACKEND_REPLACE_RETRY_BASE_DELAY_MS: u64 = 200;
 const BACKEND_POST_INSTALL_HEALTHCHECK_ATTEMPTS: u32 = 10;
 const BACKEND_POST_INSTALL_HEALTHCHECK_DELAY_MS: u64 = 300;
 
-pub struct BackendState(pub Mutex<Option<Child>>);
-pub struct BackendUpdateCancellation(pub Mutex<Option<CancellationToken>>);
+pub struct ServerState(pub Mutex<Option<Child>>);
+pub struct ServerUpdateCancellation(pub Mutex<Option<CancellationToken>>);
 
 #[derive(Serialize)]
-pub struct BackendStatus {
+pub struct ServerStatus {
     running: bool,
     installed: bool,
     version: Option<String>,
 }
 
 #[derive(Serialize)]
-pub struct BackendUpdateInfo {
+pub struct ServerUpdateInfo {
     available: bool,
     current_version: Option<String>,
     latest_version: Option<String>,
@@ -62,7 +62,7 @@ fn resolve_backend_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|_| LogMessage::BackendDataDirResolveFailed.text())?;
+        .map_err(|_| LogMessage::ServerDataDirResolveFailed.text())?;
     Ok(data_dir.join("backend"))
 }
 
@@ -80,10 +80,10 @@ fn resolve_partial_download_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve_bundled_sidecar_path() -> Result<PathBuf, String> {
     let executable_path = std::env::current_exe()
-        .map_err(|_| LogMessage::BackendSeedFailed("could not resolve current executable path".to_string()).text())?;
+        .map_err(|_| LogMessage::ServerSeedFailed("could not resolve current executable path".to_string()).text())?;
     let install_dir = executable_path
         .parent()
-        .ok_or_else(|| LogMessage::BackendSeedFailed("could not resolve install directory".to_string()).text())?;
+        .ok_or_else(|| LogMessage::ServerSeedFailed("could not resolve install directory".to_string()).text())?;
     Ok(install_dir.join(BACKEND_BINARY_FILENAME))
 }
 
@@ -94,20 +94,20 @@ fn seed_backend_binary_if_missing(_app: &AppHandle, writable_path: &PathBuf) -> 
 
     let parent = writable_path
         .parent()
-        .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
+        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
     std::fs::create_dir_all(parent)
-        .map_err(|_| LogMessage::BackendSeedFailed(writable_path.display().to_string()).text())?;
+        .map_err(|_| LogMessage::ServerSeedFailed(writable_path.display().to_string()).text())?;
 
     let bundled_sidecar = resolve_bundled_sidecar_path()?;
     std::fs::copy(&bundled_sidecar, writable_path)
-        .map_err(|_| LogMessage::BackendSeedFailed(writable_path.display().to_string()).text())?;
+        .map_err(|_| LogMessage::ServerSeedFailed(writable_path.display().to_string()).text())?;
     Ok(())
 }
 
 fn resolve_bundled_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resolve("config", tauri::path::BaseDirectory::Resource)
-        .map_err(|_| LogMessage::BackendSpawnFailed("could not resolve bundled config directory".to_string()).text())
+        .map_err(|_| LogMessage::ServerSpawnFailed("could not resolve bundled config directory".to_string()).text())
 }
 
 pub fn spawn_backend(app: &AppHandle) -> Result<(), String> {
@@ -119,31 +119,31 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), String> {
         .env("VELO_CONFIG_DIR", config_dir)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
-        .map_err(|error| LogMessage::BackendSpawnFailed(error.to_string()).text())?;
+        .map_err(|error| LogMessage::ServerSpawnFailed(error.to_string()).text())?;
 
-    println!("{}", LogMessage::BackendSpawned(writable_path.display().to_string()).text());
-    println!("{}", LogMessage::BackendSpawnedWithPid(child.id()).text());
-    app.state::<BackendState>().0.lock().unwrap().replace(child);
+    println!("{}", LogMessage::ServerSpawned(writable_path.display().to_string()).text());
+    println!("{}", LogMessage::ServerSpawnedWithPid(child.id()).text());
+    app.state::<ServerState>().0.lock().unwrap().replace(child);
     Ok(())
 }
 
 pub fn stop_backend_before_exit(app: &AppHandle) {
-    if let Some(mut child) = app.state::<BackendState>().0.lock().unwrap().take() {
+    if let Some(mut child) = app.state::<ServerState>().0.lock().unwrap().take() {
         let _ = child.kill();
     }
 }
 
 fn kill_running_backend(app: &AppHandle) -> Result<(), String> {
-    let state = app.state::<BackendState>();
+    let state = app.state::<ServerState>();
     let mut guard = state.0.lock().unwrap();
     let Some(mut child) = guard.take() else {
         return Ok(());
     };
     let pid = child.id();
-    println!("{}", LogMessage::BackendKillAttempt(pid).text());
-    child.kill().map_err(|_| LogMessage::BackendKillFailed.text())?;
-    child.wait().map_err(|_| LogMessage::BackendKillFailed.text())?;
-    println!("{}", LogMessage::BackendKillSucceeded(pid).text());
+    println!("{}", LogMessage::ServerKillAttempt(pid).text());
+    child.kill().map_err(|_| LogMessage::ServerKillFailed.text())?;
+    child.wait().map_err(|_| LogMessage::ServerKillFailed.text())?;
+    println!("{}", LogMessage::ServerKillSucceeded(pid).text());
     Ok(())
 }
 
@@ -155,13 +155,13 @@ fn kill_orphaned_backend_processes_by_name() {
 
     match result {
         Ok(output) if output.status.success() => {
-            println!("{}", LogMessage::BackendOrphanKillSucceeded.text());
+            println!("{}", LogMessage::ServerOrphanKillSucceeded.text());
         }
         Ok(_) => {
-            println!("{}", LogMessage::BackendOrphanKillNoneFound.text());
+            println!("{}", LogMessage::ServerOrphanKillNoneFound.text());
         }
         Err(error) => {
-            println!("{}", LogMessage::BackendOrphanKillFailed(error.to_string()).text());
+            println!("{}", LogMessage::ServerOrphanKillFailed(error.to_string()).text());
         }
     }
 }
@@ -178,7 +178,7 @@ fn resolve_local_version_url(app: &AppHandle) -> Result<String, String> {
         .get("network")
         .and_then(|network| network.get("signaling_port"))
         .and_then(|value| value.as_u64())
-        .ok_or_else(|| LogMessage::BackendVersionCheckFailed("network.signaling_port missing from system.yml".to_string()).text())?;
+        .ok_or_else(|| LogMessage::ServerVersionCheckFailed("network.signaling_port missing from system.yml".to_string()).text())?;
     Ok(format!("http://127.0.0.1:{port}/version"))
 }
 
@@ -189,23 +189,23 @@ fn resolve_releases_repo(app: &AppHandle) -> Result<String, String> {
         .and_then(|releases| releases.get("repo"))
         .and_then(|value| value.as_str())
         .map(|repo| repo.to_string())
-        .ok_or_else(|| LogMessage::BackendReleaseFetchFailed("releases.repo missing from system.yml".to_string()).text())
+        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed("releases.repo missing from system.yml".to_string()).text())
 }
 
 async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
     let url = match resolve_local_version_url(app) {
         Ok(url) => url,
         Err(reason) => {
-            println!("{}", LogMessage::BackendVersionUrlUnresolved(reason).text());
+            println!("{}", LogMessage::ServerVersionUrlUnresolved(reason).text());
             return None;
         }
     };
-    println!("{}", LogMessage::BackendVersionFetchAttempt(url.clone()).text());
+    println!("{}", LogMessage::ServerVersionFetchAttempt(url.clone()).text());
 
     let client = match reqwest::Client::builder().timeout(request_timeout()).build() {
         Ok(client) => client,
         Err(error) => {
-            println!("{}", LogMessage::BackendVersionHttpClientBuildFailed(error.to_string()).text());
+            println!("{}", LogMessage::ServerVersionHttpClientBuildFailed(error.to_string()).text());
             return None;
         }
     };
@@ -213,20 +213,20 @@ async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
     let response = match client.get(&url).send().await {
         Ok(response) => response,
         Err(error) => {
-            println!("{}", LogMessage::BackendVersionFetchUnreachable(format!("{url} ({error})")).text());
+            println!("{}", LogMessage::ServerVersionFetchUnreachable(format!("{url} ({error})")).text());
             return None;
         }
     };
 
     if !response.status().is_success() {
-        println!("{}", LogMessage::BackendVersionNonSuccessStatus(url, response.status().to_string()).text());
+        println!("{}", LogMessage::ServerVersionNonSuccessStatus(url, response.status().to_string()).text());
         return None;
     }
 
     let raw_body = match response.text().await {
         Ok(body) => body,
         Err(error) => {
-            println!("{}", LogMessage::BackendVersionBodyUnreadable(url, error.to_string()).text());
+            println!("{}", LogMessage::ServerVersionBodyUnreadable(url, error.to_string()).text());
             return None;
         }
     };
@@ -234,16 +234,16 @@ async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
     let parsed: LocalVersionResponse = match serde_json::from_str(&raw_body) {
         Ok(parsed) => parsed,
         Err(error) => {
-            println!("{}", LogMessage::BackendVersionUnexpectedShape(url, error.to_string(), raw_body).text());
+            println!("{}", LogMessage::ServerVersionUnexpectedShape(url, error.to_string(), raw_body).text());
             return None;
         }
     };
 
     if parsed.version == "0.0.0-dev" {
-        println!("{}", LogMessage::BackendVersionIsDevFallback(url.clone()).text());
+        println!("{}", LogMessage::ServerVersionIsDevFallback(url.clone()).text());
     }
 
-    println!("{}", LogMessage::BackendVersionFetchResult(url, parsed.version.clone()).text());
+    println!("{}", LogMessage::ServerVersionFetchResult(url, parsed.version.clone()).text());
     Some(parsed.version)
 }
 
@@ -268,17 +268,17 @@ async fn fetch_latest_backend_release(app: &AppHandle) -> Result<GithubRelease, 
     let client = reqwest::Client::builder()
         .timeout(request_timeout())
         .build()
-        .map_err(|error| LogMessage::BackendReleaseFetchFailed(format!("failed to build HTTP client: {error}")).text())?;
+        .map_err(|error| LogMessage::ServerReleaseFetchFailed(format!("failed to build HTTP client: {error}")).text())?;
     let response = client
         .get(&releases_url)
         .header("Accept", GITHUB_API_ACCEPT_HEADER)
         .header("User-Agent", GITHUB_USER_AGENT)
         .send()
         .await
-        .map_err(|error| LogMessage::BackendReleaseFetchFailed(error.to_string()).text())?;
+        .map_err(|error| LogMessage::ServerReleaseFetchFailed(error.to_string()).text())?;
 
     if !response.status().is_success() {
-        return Err(LogMessage::BackendReleaseFetchFailed(format!(
+        return Err(LogMessage::ServerReleaseFetchFailed(format!(
             "{releases_url} responded with HTTP {}",
             response.status()
         ))
@@ -288,12 +288,12 @@ async fn fetch_latest_backend_release(app: &AppHandle) -> Result<GithubRelease, 
     let releases: Vec<GithubRelease> = response
         .json()
         .await
-        .map_err(|error| LogMessage::BackendReleaseFetchFailed(error.to_string()).text())?;
+        .map_err(|error| LogMessage::ServerReleaseFetchFailed(error.to_string()).text())?;
 
     releases
         .into_iter()
         .find(|release| !release.draft && !release.prerelease && release.tag_name.starts_with(BACKEND_TAG_PREFIX))
-        .ok_or_else(|| LogMessage::BackendReleaseFetchFailed("no published backend-v* release found".to_string()).text())
+        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed("no published backend-v* release found".to_string()).text())
 }
 
 fn extract_backend_download_url(release: &GithubRelease) -> Result<String, String> {
@@ -302,7 +302,7 @@ fn extract_backend_download_url(release: &GithubRelease) -> Result<String, Strin
         .iter()
         .find(|asset| is_windows_backend_asset(&asset.name))
         .map(|asset| asset.browser_download_url.clone())
-        .ok_or_else(|| LogMessage::BackendReleaseFetchFailed(format!("release {} has no {} asset", release.tag_name, BACKEND_BINARY_FILENAME)).text())
+        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed(format!("release {} has no {} asset", release.tag_name, BACKEND_BINARY_FILENAME)).text())
 }
 
 fn tag_to_version_name(tag_name: &str) -> String {
@@ -310,28 +310,28 @@ fn tag_to_version_name(tag_name: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn get_backend_status(app: AppHandle) -> BackendStatus {
+pub async fn get_server_status(app: AppHandle) -> ServerStatus {
     let version = fetch_running_backend_version(&app).await;
-    BackendStatus { running: version.is_some(), installed: is_backend_installed(&app), version }
+    ServerStatus { running: version.is_some(), installed: is_backend_installed(&app), version }
 }
 
 #[tauri::command]
-pub fn start_backend(app: AppHandle) -> Result<BackendStatus, String> {
+pub fn start_server(app: AppHandle) -> Result<ServerStatus, String> {
     spawn_backend(&app)?;
-    Ok(BackendStatus { running: true, installed: true, version: None })
+    Ok(ServerStatus { running: true, installed: true, version: None })
 }
 
 #[tauri::command]
-pub fn restart_backend(app: AppHandle) -> Result<BackendStatus, String> {
+pub fn restart_server(app: AppHandle) -> Result<ServerStatus, String> {
     kill_running_backend(&app)?;
     spawn_backend(&app)?;
-    Ok(BackendStatus { running: true, installed: true, version: None })
+    Ok(ServerStatus { running: true, installed: true, version: None })
 }
 
 #[tauri::command]
-pub fn stop_backend(app: AppHandle) -> Result<BackendStatus, String> {
+pub fn stop_server(app: AppHandle) -> Result<ServerStatus, String> {
     kill_running_backend(&app)?;
-    Ok(BackendStatus { running: false, installed: is_backend_installed(&app), version: None })
+    Ok(ServerStatus { running: false, installed: is_backend_installed(&app), version: None })
 }
 
 const BACKEND_UNINSTALL_MAX_ATTEMPTS: u32 = 8;
@@ -355,7 +355,7 @@ fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
     }
     let backend_dir = writable_path
         .parent()
-        .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
+        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
 
     std::thread::sleep(std::time::Duration::from_millis(BACKEND_UNINSTALL_INITIAL_DELAY_MS));
 
@@ -365,26 +365,26 @@ fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
             Ok(()) => return Ok(()),
             Err(error) => {
                 last_error = error.to_string();
-                println!("{}", LogMessage::BackendUninstallRetrying(attempt, last_error.clone()).text());
+                println!("{}", LogMessage::ServerUninstallRetrying(attempt, last_error.clone()).text());
                 let delay = BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS * attempt as u64;
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
         }
     }
-    Err(LogMessage::BackendUninstallFailed(last_error).text())
+    Err(LogMessage::ServerUninstallFailed(last_error).text())
 }
 
 #[tauri::command]
-pub fn uninstall_backend(app: AppHandle) -> Result<BackendStatus, String> {
+pub fn uninstall_server(app: AppHandle) -> Result<ServerStatus, String> {
     kill_running_backend(&app)?;
     kill_orphaned_backend_processes_by_name();
     remove_backend_binary_and_directory(&app)?;
-    println!("{}", LogMessage::BackendUninstalled.text());
-    Ok(BackendStatus { running: false, installed: false, version: None })
+    println!("{}", LogMessage::ServerUninstalled.text());
+    Ok(ServerStatus { running: false, installed: false, version: None })
 }
 
 #[tauri::command]
-pub async fn check_backend_update(app: AppHandle) -> Result<BackendUpdateInfo, String> {
+pub async fn check_server_update(app: AppHandle) -> Result<ServerUpdateInfo, String> {
     let current_version = fetch_running_backend_version(&app).await;
     let release = fetch_latest_backend_release(&app).await?;
     let latest_version = tag_to_version_name(&release.tag_name);
@@ -394,7 +394,7 @@ pub async fn check_backend_update(app: AppHandle) -> Result<BackendUpdateInfo, S
         None => true,
     };
 
-    Ok(BackendUpdateInfo { available, current_version, latest_version: Some(latest_version) })
+    Ok(ServerUpdateInfo { available, current_version, latest_version: Some(latest_version) })
 }
 
 fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, destination_path: &PathBuf, progress_phase: UpdateProgress) -> Result<(), String> {
@@ -404,14 +404,14 @@ fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, destination_path: &Pa
             Ok(()) => return Ok(()),
             Err(error) => {
                 last_error = error.to_string();
-                println!("{}", LogMessage::BackendReplaceRetrying(attempt, last_error.clone()).text());
-                emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, progress_phase.clone());
+                println!("{}", LogMessage::ServerReplaceRetrying(attempt, last_error.clone()).text());
+                emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, progress_phase.clone());
                 let delay = BACKEND_REPLACE_RETRY_BASE_DELAY_MS * attempt as u64;
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
         }
     }
-    Err(LogMessage::BackendReplaceFailed(last_error).text())
+    Err(LogMessage::ServerReplaceFailed(last_error).text())
 }
 
 /// Moves the currently installed binary aside into a backup slot instead of
@@ -421,22 +421,22 @@ fn backup_current_backend_binary(app: &AppHandle, writable_path: &PathBuf, backu
     if !writable_path.exists() {
         return Ok(());
     }
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::BackingUp);
-    std::fs::rename(writable_path, backup_path).map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::BackingUp);
+    std::fs::rename(writable_path, backup_path).map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())
 }
 
 fn install_new_backend_binary(app: &AppHandle, writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
     let parent = writable_path
         .parent()
-        .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
+        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
     std::fs::create_dir_all(parent)
-        .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
+        .map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())?;
 
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, new_binary)
-        .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
+        .map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())?;
 
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
     rename_with_retry(app, &temp_path, writable_path, UpdateProgress::InstallingNew)
 }
 
@@ -447,31 +447,31 @@ fn install_new_backend_binary(app: &AppHandle, writable_path: &PathBuf, new_bina
 async fn rollback_to_previous_backend(app: &AppHandle, writable_path: &PathBuf, backup_path: &PathBuf, reason: String) -> String {
     if !backup_path.exists() {
         let message = format!("{reason} (no backup available to roll back to)");
-        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
         return message;
     }
 
     std::fs::remove_file(writable_path).ok();
     if let Err(rename_error) = rename_with_retry(app, backup_path, writable_path, UpdateProgress::BackingUp) {
         let message = format!("{reason} (rollback also failed: {rename_error})");
-        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
         return message;
     }
 
     if spawn_backend(app).is_ok() {
         let message = format!("{reason} (rolled back to previous version)");
-        println!("{}", LogMessage::BackendUpdateRolledBack(reason.clone()).text());
-        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RolledBack { message: message.clone() });
+        println!("{}", LogMessage::ServerUpdateRolledBack(reason.clone()).text());
+        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::RolledBack { message: message.clone() });
         return message;
     }
 
     let message = format!("{reason} (rolled back binary but failed to restart it)");
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
     message
 }
 
 fn take_or_create_cancellation_token(app: &AppHandle) -> CancellationToken {
-    let state = app.state::<BackendUpdateCancellation>();
+    let state = app.state::<ServerUpdateCancellation>();
     let mut guard = state.0.lock().unwrap();
     let token = CancellationToken::new();
     guard.replace(token.clone());
@@ -479,12 +479,12 @@ fn take_or_create_cancellation_token(app: &AppHandle) -> CancellationToken {
 }
 
 fn clear_cancellation_token(app: &AppHandle) {
-    app.state::<BackendUpdateCancellation>().0.lock().unwrap().take();
+    app.state::<ServerUpdateCancellation>().0.lock().unwrap().take();
 }
 
 #[tauri::command]
-pub fn cancel_backend_update(app: AppHandle) {
-    let state = app.state::<BackendUpdateCancellation>();
+pub fn cancel_server_update(app: AppHandle) {
+    let state = app.state::<ServerUpdateCancellation>();
     let guard = state.0.lock().unwrap();
     if let Some(token) = guard.as_ref() {
         token.cancel();
@@ -493,7 +493,7 @@ pub fn cancel_backend_update(app: AppHandle) {
 
 fn fail_update(app: &AppHandle, error: String) -> String {
     clear_cancellation_token(app);
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
     error
 }
 
@@ -514,19 +514,19 @@ async fn download_new_backend_binary(
     partial_path: &PathBuf,
     cancellation: &CancellationToken,
 ) -> Result<Vec<u8>, String> {
-    let bytes = download_with_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, download_url, partial_path, cancellation)
+    let bytes = download_with_progress(app, SERVER_UPDATE_PROGRESS_EVENT, download_url, partial_path, cancellation)
         .await
         .map_err(|error| match error {
             DownloadError::Cancelled => {
-                println!("{}", LogMessage::BackendUpdateCancelled.text());
+                println!("{}", LogMessage::ServerUpdateCancelled.text());
                 CANCELLED_ERROR.to_string()
             }
-            DownloadError::Failed(reason) => LogMessage::BackendDownloadFailed(reason).text(),
+            DownloadError::Failed(reason) => LogMessage::ServerDownloadFailed(reason).text(),
         })?;
 
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
     if bytes.is_empty() {
-        return Err(LogMessage::BackendDownloadFailed("downloaded binary is empty".to_string()).text());
+        return Err(LogMessage::ServerDownloadFailed("downloaded binary is empty".to_string()).text());
     }
     Ok(bytes)
 }
@@ -545,7 +545,7 @@ async fn replace_and_restart_backend(
         return Err(rollback_to_previous_backend(app, writable_path, backup_path, install_error).await);
     }
 
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
+    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
     if let Err(spawn_error) = spawn_backend(app) {
         return Err(rollback_to_previous_backend(app, writable_path, backup_path, spawn_error).await);
     }
@@ -560,9 +560,9 @@ async fn replace_and_restart_backend(
 }
 
 #[tauri::command]
-pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, String> {
+pub async fn install_server_update(app: AppHandle) -> Result<ServerStatus, String> {
     let cancellation = take_or_create_cancellation_token(&app);
-    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
+    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
 
     let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
     let release = fetch_latest_backend_release(&app).await.map_err(|error| fail_update(&app, error))?;
@@ -584,10 +584,10 @@ pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, Str
 
     clear_cancellation_token(&app);
     let latest_version = tag_to_version_name(&release.tag_name);
-    println!("{}", LogMessage::BackendUpdateInstalled(previous_version, latest_version.clone()).text());
-    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
+    println!("{}", LogMessage::ServerUpdateInstalled(previous_version, latest_version.clone()).text());
+    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
 
-    Ok(BackendStatus { running: true, installed: true, version: Some(latest_version) })
+    Ok(ServerStatus { running: true, installed: true, version: Some(latest_version) })
 }
 
 const DEV_SIDELOAD_MIN_SIZE_BYTES: usize = 1024;
@@ -600,12 +600,12 @@ const DEV_SIDELOAD_MIN_SIZE_BYTES: usize = 1024;
 /// restart, and healthcheck-gated rollback sequence as a real update so a
 /// bad manual build can't brick the installed backend either.
 #[tauri::command]
-pub async fn install_backend_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<BackendStatus, String> {
+pub async fn install_server_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<ServerStatus, String> {
     if bytes.len() < DEV_SIDELOAD_MIN_SIZE_BYTES {
-        return Err(LogMessage::BackendDownloadFailed("selected file is too small to be a real backend binary".to_string()).text());
+        return Err(LogMessage::ServerDownloadFailed("selected file is too small to be a real backend binary".to_string()).text());
     }
 
-    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
+    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
     let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
     let writable_path = resolve_writable_backend_path(&app).map_err(|error| fail_update(&app, error))?;
     let backup_path = resolve_backup_backend_path(&app).map_err(|error| fail_update(&app, error))?;
@@ -615,8 +615,8 @@ pub async fn install_backend_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Resul
     }
 
     let installed_version = fetch_running_backend_version(&app).await.unwrap_or_else(|| "unknown".to_string());
-    println!("{}", LogMessage::BackendUpdateInstalled(previous_version, installed_version.clone()).text());
-    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: installed_version.clone() });
+    println!("{}", LogMessage::ServerUpdateInstalled(previous_version, installed_version.clone()).text());
+    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: installed_version.clone() });
 
-    Ok(BackendStatus { running: true, installed: true, version: Some(installed_version) })
+    Ok(ServerStatus { running: true, installed: true, version: Some(installed_version) })
 }
