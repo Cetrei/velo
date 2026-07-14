@@ -1,4 +1,14 @@
 const GITHUB_RELEASES_API_BASE = 'https://api.github.com/repos';
+const DEFAULT_RELEASES_REPO = 'Cetrei/velo';
+
+export function getReleasesRepo(): string {
+  const configuredRepo = import.meta.env.VITE_RELEASES_REPO as string | undefined;
+  return configuredRepo && configuredRepo.length > 0 ? configuredRepo : DEFAULT_RELEASES_REPO;
+}
+
+export function getReleasesRepoUrl(): string {
+  return `https://github.com/${getReleasesRepo()}`;
+}
 
 function buildReleasesApiUrl(repo: string): string {
   return `${GITHUB_RELEASES_API_BASE}/${repo}/releases`;

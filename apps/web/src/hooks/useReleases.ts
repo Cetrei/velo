@@ -1,18 +1,9 @@
 import { useEffect, useState } from 'react';
-import { fetchPublishedReleases, type VeloRelease } from '../lib/releases';
-import { loadReleasesRepo } from '../lib/signaling-client';
-import { getSignalingUrl } from '../lib/pairing';
+import { fetchPublishedReleases, getReleasesRepo, type VeloRelease } from '../lib/releases';
 
 interface UseReleasesResult {
   releases: VeloRelease[] | null;
   error: string | null;
-}
-
-function loadReleasesRepoOrFail(signalingUrl: string): Promise<string> {
-  return loadReleasesRepo(signalingUrl).catch((repoError: unknown) => {
-    console.error('[WEB] Failed to load releases repo from signaling server', repoError);
-    throw new Error('[WEB] Could not reach the signaling server to load release settings');
-  });
 }
 
 function fetchPublishedReleasesOrFail(repo: string): Promise<VeloRelease[]> {
@@ -28,10 +19,8 @@ export function useReleases(): UseReleasesResult {
 
   useEffect(() => {
     let cancelled = false;
-    const signalingUrl = getSignalingUrl();
 
-    loadReleasesRepoOrFail(signalingUrl)
-      .then((repo) => fetchPublishedReleasesOrFail(repo))
+    fetchPublishedReleasesOrFail(getReleasesRepo())
       .then((result) => {
         if (!cancelled) setReleases(result);
       })

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { App } from '@capacitor/app';
-import { fetchPublishedReleases, type VeloRelease } from '../lib/releases';
-import { loadReleasesRepo } from '../lib/signaling-client';
-import { getSignalingUrl } from '../lib/pairing';
+import { fetchPublishedReleases, getReleasesRepo, type VeloRelease } from '../lib/releases';
 import { VeloUpdater } from '../lib/android-updater';
 import { getClientEnvironment } from '../lib/environment';
 
@@ -34,8 +32,7 @@ export function useAndroidUpdater() {
 
     setStatus('checking');
     try {
-      const [appInfo, repo] = await Promise.all([App.getInfo(), loadReleasesRepo(getSignalingUrl())]);
-      const releases = await fetchPublishedReleases(repo);
+      const [appInfo, releases] = await Promise.all([App.getInfo(), fetchPublishedReleases(getReleasesRepo())]);
       const latestWithAndroidAsset = releases.find((release) => release.androidAsset !== null);
 
       if (!latestWithAndroidAsset || !isNewerVersion(latestWithAndroidAsset.versionName, appInfo.version)) {

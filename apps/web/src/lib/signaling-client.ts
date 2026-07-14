@@ -3,7 +3,6 @@ import { io, type Socket } from 'socket.io-client';
 interface SystemConfigResponse {
   ice_servers: RTCIceServer[];
   signaling_port: number;
-  releases: { repo: string };
 }
 
 interface UserConfigResponse {
@@ -36,11 +35,6 @@ export function loadSystemConfig(signalingUrl: string): Promise<SystemConfigResp
   return fetchConfig(`${signalingUrl}/config/system`, cachedSystemConfig, (value) => {
     cachedSystemConfig = value;
   });
-}
-
-export async function loadReleasesRepo(signalingUrl: string): Promise<string> {
-  const systemConfig = await loadSystemConfig(signalingUrl);
-  return systemConfig.releases.repo;
 }
 
 export function loadUserConfig(signalingUrl: string): Promise<UserConfigResponse> {

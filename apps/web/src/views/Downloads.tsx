@@ -1,9 +1,7 @@
 import { VeloIcon } from '../components/VeloIcon';
 import { PlatformReleaseColumn } from '../components/PlatformReleaseColumn';
 import { useReleases } from '../hooks/useReleases';
-import type { VeloRelease } from '../lib/releases';
-
-const GITHUB_REPO_URL = 'https://github.com/Cetrei/velo';
+import { getReleasesRepoUrl, type VeloRelease } from '../lib/releases';
 
 function toWindowsEntries(releases: VeloRelease[]) {
   return releases
@@ -50,7 +48,7 @@ export function Downloads() {
         </div>
       )}
 
-      <a href={GITHUB_REPO_URL} className="text-xs text-velo-text-secondary underline">
+      <a href={getReleasesRepoUrl()} className="text-xs text-velo-text-secondary underline">
         View source on GitHub
       </a>
     </main>
