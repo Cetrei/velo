@@ -64,7 +64,7 @@ export async function fetchPublishedReleases(repo: string): Promise<VeloRelease[
     headers: { Accept: 'application/vnd.github+json' },
   });
   if (!response.ok) {
-    throw new Error('[WEB] Failed to fetch releases from GitHub');
+    throw new Error(`[WEB] Failed to fetch releases from GitHub (status ${response.status})`);
   }
   const raw = (await response.json()) as GithubRelease[];
   return raw
