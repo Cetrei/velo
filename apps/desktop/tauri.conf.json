@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Velo",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "identifier": "com.cetrei.velo",
   "build": {
     "devUrl": "http://localhost:4000",
@@ -31,6 +31,9 @@
     "targets": "all",
     "icon": [
       "assets/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/velo-backend"
     ],
     "resources": {
       "resources/obs-virtualsource.dll": "resources/obs-virtualsource.dll",

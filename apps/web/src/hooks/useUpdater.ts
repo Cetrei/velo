@@ -3,8 +3,6 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getClientEnvironment } from '../lib/environment';
 
-const PERIODIC_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
-
 export type UpdaterStatus = 'idle' | 'checking' | 'ready' | 'installing' | 'error';
 
 export function useUpdater() {
@@ -32,8 +30,6 @@ export function useUpdater() {
 
   useEffect(() => {
     runCheck();
-    const intervalId = setInterval(runCheck, PERIODIC_CHECK_INTERVAL_MS);
-    return () => clearInterval(intervalId);
   }, [runCheck]);
 
   const installNow = useCallback(async () => {
@@ -53,5 +49,5 @@ export function useUpdater() {
     setStatus('idle');
   }, []);
 
-  return { status, version, installNow, dismiss };
+  return { status, version, runCheck, installNow, dismiss };
 }

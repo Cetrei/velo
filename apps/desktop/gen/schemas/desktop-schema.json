@@ -177,16 +177,28 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`",
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`"
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`"
+        },
+        {
+          "description": "Allows checking GitHub Releases for a newer independently-versioned backend build.",
+          "type": "string",
+          "const": "allow-check-backend-update",
+          "markdownDescription": "Allows checking GitHub Releases for a newer independently-versioned backend build."
         },
         {
           "description": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window.",
           "type": "string",
           "const": "allow-close-splashscreen",
           "markdownDescription": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window."
+        },
+        {
+          "description": "Allows reading the currently running backend sidecar's version and health.",
+          "type": "string",
+          "const": "allow-get-backend-status",
+          "markdownDescription": "Allows reading the currently running backend sidecar's version and health."
         },
         {
           "description": "Allows reading the bundled read-only system.yml config.",
@@ -201,6 +213,12 @@
           "markdownDescription": "Allows reading the user's writable user.yml config."
         },
         {
+          "description": "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process.",
+          "type": "string",
+          "const": "allow-install-backend-update",
+          "markdownDescription": "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process."
+        },
+        {
           "description": "Allows pushing a decoded WebRTC video frame into the virtual camera driver.",
           "type": "string",
           "const": "allow-push-frame",
@@ -211,6 +229,18 @@
           "type": "string",
           "const": "allow-save-user-config",
           "markdownDescription": "Allows writing the user's writable user.yml config."
+        },
+        {
+          "description": "Allows starting the backend sidecar on demand without restarting the desktop app.",
+          "type": "string",
+          "const": "allow-start-backend",
+          "markdownDescription": "Allows starting the backend sidecar on demand without restarting the desktop app."
+        },
+        {
+          "description": "Allows stopping the backend sidecar and removing its binary and data directory from disk.",
+          "type": "string",
+          "const": "allow-uninstall-backend",
+          "markdownDescription": "Allows stopping the backend sidecar and removing its binary and data directory from disk."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

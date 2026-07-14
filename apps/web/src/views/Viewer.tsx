@@ -3,11 +3,14 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useWebRtc } from '../hooks/useWebRTC';
 import { useFramePusher } from '../hooks/useFramePusher';
 import { useConfig } from '../hooks/useConfig';
+import { useUpdater } from '../hooks/useUpdater';
+import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { buildPairingUrl, createPairing, getSignalingUrl } from '../lib/pairing';
 import { SettingsPanel } from '../components/SettingsPanel';
-import { UpdateBanner } from '../components/UpdateBanner';
+import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
 import { DevStageLogPanel } from '../components/DevStageLogPanel';
+import type { SettingsTabId } from '../components/SettingsTabs';
 
 interface PairingState {
   roomId: string;
@@ -91,9 +94,17 @@ function PairingReadyPanel({
 export function Viewer() {
   const signalingUrl = useMemo(() => getSignalingUrl(), []);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('user');
   const { pairing, error, isGenerating, generate, clear } = usePairingSession(signalingUrl);
   const { config } = useConfig();
   const devModeEnabled = config?.behavior.dev_mode_enabled ?? false;
+  const { runCheck: runDesktopUpdateCheck } = useUpdater();
+  const { runCheck: runBackendUpdateCheck } = useBackendUpdater();
+
+  const openUpdatesTab = useCallback(() => {
+    setSettingsTab('updates');
+    setShowSettings(true);
+  }, []);
 
   const pairingUrl = useMemo(() => {
     if (!pairing) return null;
@@ -119,6 +130,12 @@ export function Viewer() {
 
   const isConnected = connectionState === 'connected' && remotePeer !== null;
   useFramePusher(videoRef, isConnected);
+
+  useEffect(() => {
+    if (connectionState !== 'failed') return;
+    runDesktopUpdateCheck();
+    runBackendUpdateCheck();
+  }, [connectionState, runDesktopUpdateCheck, runBackendUpdateCheck]);
 
   const handleDisconnect = useCallback(() => {
     disconnect();
@@ -159,9 +176,9 @@ export function Viewer() {
           Settings
         </button>
       </div>
-      {showSettings && <SettingsPanel />}
+      {showSettings && <SettingsPanel initialTab={settingsTab} />}
       <DevStageLogPanel isEnabled={devModeEnabled} />
-      <UpdateBanner />
+      <UpdateNotificationBanner onOpenUpdates={openUpdatesTab} />
     </main>
   );
 }

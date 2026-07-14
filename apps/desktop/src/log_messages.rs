@@ -15,6 +15,19 @@ pub enum LogMessage {
     CloseSplashscreenInvoked,
     SplashscreenWindowMissing,
     SplashscreenClosedFromMainShow,
+    BackendSeedFailed(String),
+    BackendSpawnFailed(String),
+    BackendSpawned(String),
+    BackendKillFailed,
+    BackendVersionCheckFailed(String),
+    BackendReleaseFetchFailed(String),
+    BackendDownloadFailed(String),
+    BackendReplaceFailed(String),
+    BackendUpdateInstalled(String, String),
+    BackendDataDirResolveFailed,
+    BackendUninstallFailed(String),
+    BackendUninstalled,
+    BackendStartupSkippedDisabled,
 }
 
 impl LogMessage {
@@ -67,6 +80,45 @@ impl LogMessage {
             }
             LogMessage::SplashscreenClosedFromMainShow => {
                 "[DESKTOP] splashscreen force-closed as a fallback when main window was shown via tray or duplicate-instance focus".to_string()
+            }
+            LogMessage::BackendSeedFailed(path) => {
+                format!("[BACKEND_MANAGER] Failed to seed writable backend binary at {path}")
+            }
+            LogMessage::BackendSpawnFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to spawn backend sidecar: {reason}")
+            }
+            LogMessage::BackendSpawned(path) => {
+                format!("[BACKEND_MANAGER] Backend sidecar spawned from {path}")
+            }
+            LogMessage::BackendKillFailed => {
+                "[BACKEND_MANAGER] Failed to kill the running backend sidecar before replacing its binary".to_string()
+            }
+            LogMessage::BackendVersionCheckFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to read running backend version: {reason}")
+            }
+            LogMessage::BackendReleaseFetchFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to fetch latest backend-v* release from GitHub: {reason}")
+            }
+            LogMessage::BackendDownloadFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to download new backend binary: {reason}")
+            }
+            LogMessage::BackendReplaceFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to replace backend binary on disk: {reason}")
+            }
+            LogMessage::BackendUpdateInstalled(from, to) => {
+                format!("[BACKEND_MANAGER] Backend updated from {from} to {to} and restarted")
+            }
+            LogMessage::BackendDataDirResolveFailed => {
+                "[BACKEND_MANAGER] Failed to resolve the app data directory for the writable backend binary".to_string()
+            }
+            LogMessage::BackendUninstallFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to remove backend binary and data directory: {reason}")
+            }
+            LogMessage::BackendUninstalled => {
+                "[BACKEND_MANAGER] Backend uninstalled, binary and data directory removed".to_string()
+            }
+            LogMessage::BackendStartupSkippedDisabled => {
+                "[BACKEND_MANAGER] Backend autostart skipped, disabled in user.yml (backend.enabled = false)".to_string()
             }
         }
     }

@@ -22,3 +22,6 @@ connection:
   stun_p2p: {}
   cloudflare_relay:
     tunnel_token: ""
+
+backend:
+  enabled: true

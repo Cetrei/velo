@@ -4,13 +4,42 @@ on:
   push:
     tags:
       - "v*"
+      - "backend-v*"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
+  sync-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install root dependencies
+        run: bun install
+
+      - name: Sync version from tag
+        run: bun run sync:version ${{ github.ref_name }}
+
+      - name: Commit and push version bump to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "[SYNC-VERSION] No version changes to commit"
+            exit 0
+          fi
+          git add apps/desktop/tauri.conf.json apps/web/android/variables.gradle apps/server/package.json
+          git commit -m "chore: sync version to ${{ github.ref_name }} [skip ci]"
+          git push origin HEAD:main
+
   desktop:
+    if: ${{ !startsWith(github.ref_name, 'backend-v') }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -57,6 +86,22 @@ jobs:
         working-directory: apps/web
         run: bun run build
 
+      - name: Cache server Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            apps/server/node_modules
+          key: ${{ runner.os }}-bun-server-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-server-
+
+      - name: Compile backend binary for the desktop sidecar
+        run: bun run build:server
+
+      - name: Prepare backend sidecar for Tauri bundling
+        run: bun scripts/prepare-backend-sidecar.mjs
+
       - name: Build and sign desktop app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -71,6 +116,7 @@ jobs:
           releaseName: "Velo ${{ github.ref_name }}"
 
   android:
+    if: ${{ !startsWith(github.ref_name, 'backend-v') }}
     runs-on: ubuntu-latest
     env:
       VELO_ANDROID_KEYSTORE_BASE64: ${{ secrets.VELO_ANDROID_KEYSTORE_BASE64 }}
@@ -157,6 +203,10 @@ jobs:
 
       - name: Install root dependencies
         run: bun install
+
+      - name: Sync backend version from tag
+        if: ${{ startsWith(github.ref_name, 'backend-v') }}
+        run: bun run sync:version ${{ github.ref_name }}
 
       - name: Cache server Bun dependencies
         uses: actions/cache@v4

@@ -7,11 +7,13 @@ import { useCameraStream } from '../hooks/useCameraStream';
 import { useWebRtc } from '../hooks/useWebRTC';
 import { useDeepLinkPairing } from '../hooks/useDeepLinkPairing';
 import { useLocalConnectionConfig } from '../hooks/useLocalConnectionConfig';
+import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
 import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
 import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
 import { ConnectionModeSettings } from '../components/ConnectionModeSettings';
-import { AndroidUpdateBanner } from '../components/AndroidUpdateBanner';
+import { UpdatesTab } from '../components/UpdatesTab';
+import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
 
@@ -87,6 +89,12 @@ export function StreamingView({
 
   useForegroundStreamingService(connectionState === 'connected');
 
+  const { runCheck: runAndroidUpdateCheck } = useAndroidUpdater();
+  useEffect(() => {
+    if (connectionState !== 'failed') return;
+    runAndroidUpdateCheck();
+  }, [connectionState, runAndroidUpdateCheck]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -129,17 +137,33 @@ export function StreamingView({
   );
 }
 
+type HostSettingsTab = 'connection' | 'updates';
+
 export function Host() {
   const { pairing: deepLinkPairing, reset: resetDeepLinkPairing } = useDeepLinkPairing();
   const [manualPairing, setManualPairing] = useState<PairingFromUrl | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const { connection, saveConnection } = useLocalConnectionConfig();
+  const [settingsTab, setSettingsTab] = useState<HostSettingsTab>('connection');
+  const { connection, saveConnection, isLoaded } = useLocalConnectionConfig();
   const pairing = deepLinkPairing ?? manualPairing;
 
   const handleExit = useCallback(() => {
     resetDeepLinkPairing();
     setManualPairing(null);
   }, [resetDeepLinkPairing]);
+
+  const openUpdatesTab = useCallback(() => {
+    setSettingsTab('updates');
+    setShowSettings(true);
+  }, []);
+
+  if (!isLoaded) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-text-secondary">
+        <p>Loading connection settings…</p>
+      </main>
+    );
+  }
 
   if (pairing) {
     return <StreamingView pairing={pairing} connection={connection} onExit={handleExit} />;
@@ -149,12 +173,21 @@ export function Host() {
     <>
       <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={setManualPairing} />
       <div className="fixed bottom-4 right-4 z-10 flex flex-col items-end gap-2">
-        <button onClick={() => setShowSettings((value) => !value)} className="text-sm text-velo-indigo underline">
+        <button
+          onClick={() => {
+            setSettingsTab('connection');
+            setShowSettings((value) => !value);
+          }}
+          className="text-sm text-velo-indigo underline"
+        >
           Settings
         </button>
-        {showSettings && <ConnectionModeSettings connection={connection} onChange={saveConnection} />}
+        {showSettings && settingsTab === 'connection' && (
+          <ConnectionModeSettings connection={connection} onChange={saveConnection} />
+        )}
+        {showSettings && settingsTab === 'updates' && <UpdatesTab />}
       </div>
-      <AndroidUpdateBanner />
+      <UpdateNotificationBanner onOpenUpdates={openUpdatesTab} />
     </>
   );
 }

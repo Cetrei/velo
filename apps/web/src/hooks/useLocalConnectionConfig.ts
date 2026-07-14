@@ -1,6 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Preferences } from '@capacitor/preferences';
 import type { ConnectionConfig } from 'shared-types';
 
+/**
+ * Backed by Capacitor Preferences instead of raw localStorage. On native Android this
+ * survives APK updates the same way SharedPreferences does; on plain browser/WEB_SANDBOX
+ * Capacitor's own web implementation transparently falls back to localStorage, so no
+ * environment branching is needed here.
+ */
 const STORAGE_KEY = 'velo:connection-config';
 
 const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
@@ -9,8 +16,7 @@ const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   cloudflare_relay: { tunnel_token: '' },
 };
 
-function readStoredConnectionConfig(): ConnectionConfig {
-  const raw = localStorage.getItem(STORAGE_KEY);
+function parseStoredConnectionConfig(raw: string | null): ConnectionConfig {
   if (!raw) return DEFAULT_CONNECTION_CONFIG;
 
   try {
@@ -22,12 +28,22 @@ function readStoredConnectionConfig(): ConnectionConfig {
 }
 
 export function useLocalConnectionConfig() {
-  const [connection, setConnection] = useState<ConnectionConfig>(readStoredConnectionConfig);
+  const [connection, setConnection] = useState<ConnectionConfig>(DEFAULT_CONNECTION_CONFIG);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    Preferences.get({ key: STORAGE_KEY })
+      .then(({ value }) => setConnection(parseStoredConnectionConfig(value)))
+      .catch(() => console.warn('[WEB] Failed to read connection config from device storage'))
+      .finally(() => setIsLoaded(true));
+  }, []);
 
   const saveConnection = useCallback((next: ConnectionConfig) => {
     setConnection(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    Preferences.set({ key: STORAGE_KEY, value: JSON.stringify(next) }).catch(() => {
+      console.warn('[WEB] Failed to persist connection config to device storage');
+    });
   }, []);
 
-  return { connection, saveConnection };
+  return { connection, saveConnection, isLoaded };
 }

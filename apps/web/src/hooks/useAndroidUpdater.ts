@@ -6,8 +6,6 @@ import { getSignalingUrl } from '../lib/pairing';
 import { VeloUpdater } from '../lib/android-updater';
 import { getClientEnvironment } from '../lib/environment';
 
-const PERIODIC_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
-
 export type AndroidUpdaterStatus = 'idle' | 'checking' | 'ready' | 'downloading' | 'installing' | 'error';
 
 function parseVersionParts(versionName: string): number[] {
@@ -54,8 +52,6 @@ export function useAndroidUpdater() {
 
   useEffect(() => {
     runCheck();
-    const intervalId = setInterval(runCheck, PERIODIC_CHECK_INTERVAL_MS);
-    return () => clearInterval(intervalId);
   }, [runCheck]);
 
   const installNow = useCallback(async () => {
@@ -84,5 +80,5 @@ export function useAndroidUpdater() {
     setStatus('idle');
   }, []);
 
-  return { status, version: availableRelease?.versionName ?? null, installNow, dismiss };
+  return { status, version: availableRelease?.versionName ?? null, runCheck, installNow, dismiss };
 }

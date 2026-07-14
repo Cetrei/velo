@@ -79,6 +79,10 @@ export interface UserConfig {
     show_notification: boolean;
   };
   connection: ConnectionConfig;
+  /** Desktop only. Whether the backend sidecar should autostart when the desktop app launches. Toggling this in the UI also starts or stops the live process immediately, this field only controls what happens on the next app launch. Optional because it postdates this config shape; older user.yml files on disk default to enabled. */
+  backend?: {
+    enabled: boolean;
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -223,6 +227,14 @@ function validateConnection(connection: unknown): asserts connection is Connecti
   validateCloudflareRelay(record.cloudflare_relay, 'connection.cloudflare_relay');
 }
 
+const DEFAULT_BACKEND_ENABLED = true;
+
+function validateBackend(backend: unknown, fieldPath: string): asserts backend is NonNullable<UserConfig['backend']> {
+  assertField(isRecord(backend), fieldPath);
+  const record = backend as Record<string, unknown>;
+  assertField(typeof record.enabled === 'boolean', `${fieldPath}.enabled`);
+}
+
 export function validateUserConfig(value: unknown): UserConfig {
   assertField(isRecord(value), 'root');
   const record = value as Record<string, unknown>;
@@ -230,5 +242,9 @@ export function validateUserConfig(value: unknown): UserConfig {
   validateBehavior(record.behavior);
   validateAndroid(record.android);
   validateConnection(record.connection);
-  return record as unknown as UserConfig;
+  if (record.backend !== undefined) {
+    validateBackend(record.backend, 'backend');
+    return { ...record, backend: record.backend } as unknown as UserConfig;
+  }
+  return { ...record, backend: { enabled: DEFAULT_BACKEND_ENABLED } } as unknown as UserConfig;
 }

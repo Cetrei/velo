@@ -23,6 +23,31 @@ identifier = "allow-close-splashscreen"
 description = "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window."
 commands.allow = ["close_splashscreen"]
 
+[[permission]]
+identifier = "allow-check-backend-update"
+description = "Allows checking GitHub Releases for a newer independently-versioned backend build."
+commands.allow = ["check_backend_update"]
+
+[[permission]]
+identifier = "allow-install-backend-update"
+description = "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process."
+commands.allow = ["install_backend_update"]
+
+[[permission]]
+identifier = "allow-get-backend-status"
+description = "Allows reading the currently running backend sidecar's version and health."
+commands.allow = ["get_backend_status"]
+
+[[permission]]
+identifier = "allow-start-backend"
+description = "Allows starting the backend sidecar on demand without restarting the desktop app."
+commands.allow = ["start_backend"]
+
+[[permission]]
+identifier = "allow-uninstall-backend"
+description = "Allows stopping the backend sidecar and removing its binary and data directory from disk."
+commands.allow = ["uninstall_backend"]
+
 [[set]]
 identifier = "default"
 description = "Default permission set granting access to all of Velo's own app-level commands."
@@ -32,4 +57,9 @@ permissions = [
   "allow-get-user-config",
   "allow-save-user-config",
   "allow-close-splashscreen",
+  "allow-check-backend-update",
+  "allow-install-backend-update",
+  "allow-get-backend-status",
+  "allow-start-backend",
+  "allow-uninstall-backend",
 ]

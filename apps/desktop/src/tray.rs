@@ -1,3 +1,4 @@
+use crate::backend_manager::BackendState;
 use crate::log_messages::LogMessage;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -31,12 +32,21 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&open_item, &settings_item, &restart_item, &quit_item])
 }
 
+fn stop_backend_before_exit(app: &AppHandle) {
+    if let Some(mut child) = app.state::<BackendState>().0.lock().unwrap().take() {
+        let _ = child.kill();
+    }
+}
+
 fn handle_menu_event(app: &AppHandle, menu_id: &str) {
     match menu_id {
         MENU_ID_OPEN => show_main_window(app),
         MENU_ID_SETTINGS => emit_open_settings(app),
         MENU_ID_RESTART => app.restart(),
-        MENU_ID_QUIT => app.exit(0),
+        MENU_ID_QUIT => {
+            stop_backend_before_exit(app);
+            app.exit(0);
+        }
         _ => println!("{}", LogMessage::UnknownTrayMenuId(menu_id.to_string()).text()),
     }
 }

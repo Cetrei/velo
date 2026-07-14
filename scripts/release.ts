@@ -1,13 +1,14 @@
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
+const BACKEND_VERSION_TAG_PATTERN = /^backend-v(\d+)\.(\d+)\.(\d+)$/;
 
 function parseVersionArg(): string {
   const arg = process.argv[2];
   if (!arg) {
-    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z (e.g. v1.4.2)');
+    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z (e.g. v1.4.2) or backend-vX.Y.Z (e.g. backend-v1.4.2)');
     process.exit(1);
   }
-  if (!VERSION_TAG_PATTERN.test(arg)) {
-    console.error(`[RELEASE] "${arg}" does not match vX.Y.Z (e.g. v1.4.2)`);
+  if (!VERSION_TAG_PATTERN.test(arg) && !BACKEND_VERSION_TAG_PATTERN.test(arg)) {
+    console.error(`[RELEASE] "${arg}" does not match vX.Y.Z or backend-vX.Y.Z (e.g. v1.4.2 or backend-v1.4.2)`);
     process.exit(1);
   }
   return arg;

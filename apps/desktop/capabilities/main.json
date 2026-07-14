@@ -16,6 +16,11 @@
     "allow-get-system-config",
     "allow-get-user-config",
     "allow-save-user-config",
-    "allow-close-splashscreen"
+    "allow-close-splashscreen",
+    "allow-check-backend-update",
+    "allow-install-backend-update",
+    "allow-get-backend-status",
+    "allow-start-backend",
+    "allow-uninstall-backend"
   ]
 }

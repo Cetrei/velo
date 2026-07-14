@@ -18,4 +18,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 tokio = { version = "1", features = ["time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 vcam-driver = { path = "../../crates/vcam-driver" }

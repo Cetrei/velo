@@ -7,6 +7,7 @@ import { readSystemConfig, readUserConfig } from './config';
 import { registerSignalingHandlers } from './signaling';
 import { registerConfigRoutes } from './config-route';
 import { registerStatusRoute } from './status-route';
+import { registerVersionRoute } from './version-route';
 import { registerPairingRoutes } from './pairing-route';
 import { attachSocketRateLimiting } from './socket-rate-limit';
 import { formatLog, LogMessage } from './log-messages';
@@ -35,6 +36,7 @@ app.use(
 app.use(express.json({ limit: '16kb' }));
 
 registerConfigRoutes(app, systemConfig, readUserConfig);
+registerVersionRoute(app);
 registerPairingRoutes(app);
 
 const httpServer = createServer(app);

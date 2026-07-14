@@ -1,10 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backend_manager;
 mod config;
 mod log_messages;
 mod tray;
 
+use backend_manager::BackendState;
 use log_messages::LogMessage;
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Manager, WindowEvent};
 
@@ -104,6 +107,27 @@ fn handle_main_window_event(app: &tauri::AppHandle, event: &WindowEvent) {
     println!("{}", LogMessage::WindowHiddenToTray.text());
 }
 
+fn should_autostart_backend(app: &tauri::AppHandle) -> bool {
+    match config::get_user_config(app) {
+        Ok(user_config) => user_config
+            .get("backend")
+            .and_then(|backend| backend.get("enabled"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true),
+        Err(_) => true,
+    }
+}
+
+fn spawn_backend_on_setup(app: &tauri::AppHandle) {
+    if !should_autostart_backend(app) {
+        println!("{}", LogMessage::BackendStartupSkippedDisabled.text());
+        return;
+    }
+    if let Err(error) = backend_manager::spawn_backend(app) {
+        eprintln!("{error}");
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -111,16 +135,23 @@ fn main() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(BackendState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             push_frame,
             get_system_config,
             get_user_config,
             save_user_config,
-            close_splashscreen
+            close_splashscreen,
+            backend_manager::get_backend_status,
+            backend_manager::check_backend_update,
+            backend_manager::install_backend_update,
+            backend_manager::start_backend,
+            backend_manager::uninstall_backend
         ])
         .setup(|app| {
             create_main_window(app.handle())?;
             tray::create_tray(app.handle())?;
+            spawn_backend_on_setup(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
