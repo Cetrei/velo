@@ -7,7 +7,7 @@ mod tray;
 mod tunnel_manager;
 mod update_progress;
 
-use backend_manager::BackendState;
+use backend_manager::{BackendState, BackendUpdateCancellation};
 use log_messages::LogMessage;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -146,6 +146,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(BackendState(Mutex::new(None)))
+        .manage(BackendUpdateCancellation(Mutex::new(None)))
         .manage(TunnelState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             push_frame,
@@ -156,6 +157,7 @@ fn main() {
             backend_manager::get_backend_status,
             backend_manager::check_backend_update,
             backend_manager::install_backend_update,
+            backend_manager::cancel_backend_update,
             backend_manager::start_backend,
             backend_manager::restart_backend,
             backend_manager::stop_backend,

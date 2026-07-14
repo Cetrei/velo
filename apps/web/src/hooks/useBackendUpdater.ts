@@ -3,7 +3,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { getClientEnvironment } from '../lib/environment';
 import { useUpdateProgress } from './useUpdateProgress';
 
-export type BackendUpdaterStatus = 'idle' | 'checking' | 'ready' | 'installing' | 'uninstalling' | 'starting' | 'stopping' | 'restarting' | 'error';
+export type BackendUpdaterStatus =
+  | 'idle'
+  | 'checking'
+  | 'ready'
+  | 'installing'
+  | 'cancelled'
+  | 'uninstalling'
+  | 'starting'
+  | 'stopping'
+  | 'restarting'
+  | 'error';
 
 const BACKEND_UPDATE_PROGRESS_EVENT = 'backend-update-progress';
 
@@ -72,6 +82,11 @@ export function useBackendUpdater() {
       setLatestVersion(null);
       setStatus('idle');
     } catch (error) {
+      const wasCancelled = typeof error === 'string' && error === 'cancelled';
+      if (wasCancelled) {
+        setStatus('cancelled');
+        return;
+      }
       console.warn('[BACKEND_UPDATER] failed to install backend update', error);
       setStatus('error');
     }
@@ -113,6 +128,14 @@ export function useBackendUpdater() {
     }
   }, [applyBackendStatus]);
 
+  const cancelNow = useCallback(async () => {
+    try {
+      await invoke('cancel_backend_update');
+    } catch (error) {
+      console.warn('[BACKEND_UPDATER] failed to cancel backend update', error);
+    }
+  }, []);
+
   const uninstallNow = useCallback(async () => {
     setStatus('uninstalling');
     try {
@@ -139,6 +162,7 @@ export function useBackendUpdater() {
     progress,
     runCheck,
     installNow,
+    cancelNow,
     startNow,
     stopNow,
     restartNow,

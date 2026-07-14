@@ -1,21 +1,29 @@
 use crate::log_messages::LogMessage;
-use crate::update_progress::{download_with_progress, emit_progress, request_timeout, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT};
+use crate::update_progress::{
+    download_with_progress, emit_progress, request_timeout, CancellationToken, UpdateProgress, BACKEND_UPDATE_PROGRESS_EVENT,
+};
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 const BACKEND_BINARY_FILENAME: &str = "velo-backend.exe";
+const BACKEND_BACKUP_FILENAME: &str = "velo-backend.exe.backup";
+const BACKEND_PARTIAL_FILENAME: &str = "velo-backend.exe.partial";
 const GITHUB_API_ACCEPT_HEADER: &str = "application/vnd.github+json";
 const GITHUB_USER_AGENT: &str = "velo-desktop-backend-manager";
 const BACKEND_TAG_PREFIX: &str = "backend-v";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const BACKEND_REPLACE_MAX_ATTEMPTS: u32 = 5;
 const BACKEND_REPLACE_RETRY_BASE_DELAY_MS: u64 = 200;
+const BACKEND_POST_INSTALL_HEALTHCHECK_ATTEMPTS: u32 = 10;
+const BACKEND_POST_INSTALL_HEALTHCHECK_DELAY_MS: u64 = 300;
 
 pub struct BackendState(pub Mutex<Option<Child>>);
+pub struct BackendUpdateCancellation(pub Mutex<Option<CancellationToken>>);
 
 #[derive(Serialize)]
 pub struct BackendStatus {
@@ -50,12 +58,24 @@ struct GithubRelease {
     assets: Vec<GithubReleaseAsset>,
 }
 
-fn resolve_writable_backend_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn resolve_backend_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|_| LogMessage::BackendDataDirResolveFailed.text())?;
-    Ok(data_dir.join("backend").join(BACKEND_BINARY_FILENAME))
+    Ok(data_dir.join("backend"))
+}
+
+fn resolve_writable_backend_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(resolve_backend_dir(app)?.join(BACKEND_BINARY_FILENAME))
+}
+
+fn resolve_backup_backend_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(resolve_backend_dir(app)?.join(BACKEND_BACKUP_FILENAME))
+}
+
+fn resolve_partial_download_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(resolve_backend_dir(app)?.join(BACKEND_PARTIAL_FILENAME))
 }
 
 fn resolve_bundled_sidecar_path() -> Result<PathBuf, String> {
@@ -227,6 +247,16 @@ async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
     Some(parsed.version)
 }
 
+async fn wait_for_backend_healthy(app: &AppHandle) -> bool {
+    for _ in 0..BACKEND_POST_INSTALL_HEALTHCHECK_ATTEMPTS {
+        if fetch_running_backend_version(app).await.is_some() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(BACKEND_POST_INSTALL_HEALTHCHECK_DELAY_MS)).await;
+    }
+    false
+}
+
 fn is_windows_backend_asset(name: &str) -> bool {
     name.eq_ignore_ascii_case(BACKEND_BINARY_FILENAME)
 }
@@ -338,15 +368,15 @@ pub async fn check_backend_update(app: AppHandle) -> Result<BackendUpdateInfo, S
     Ok(BackendUpdateInfo { available, current_version, latest_version: Some(latest_version) })
 }
 
-fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(), String> {
+fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, destination_path: &PathBuf, progress_phase: UpdateProgress) -> Result<(), String> {
     let mut last_error = String::new();
     for attempt in 1..=BACKEND_REPLACE_MAX_ATTEMPTS {
-        match std::fs::rename(temp_path, writable_path) {
+        match std::fs::rename(temp_path, destination_path) {
             Ok(()) => return Ok(()),
             Err(error) => {
                 last_error = error.to_string();
                 println!("{}", LogMessage::BackendReplaceRetrying(attempt, last_error.clone()).text());
-                emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RemovingOld);
+                emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, progress_phase.clone());
                 let delay = BACKEND_REPLACE_RETRY_BASE_DELAY_MS * attempt as u64;
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             }
@@ -355,75 +385,177 @@ fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, writable_path: &PathB
     Err(LogMessage::BackendReplaceFailed(last_error).text())
 }
 
-fn replace_backend_binary_on_disk(app: &AppHandle, writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
+/// Moves the currently installed binary aside into a backup slot instead of
+/// deleting it. This is the safety net rollback relies on: nothing that
+/// currently works gets destroyed until the new binary has proven itself.
+fn backup_current_backend_binary(app: &AppHandle, writable_path: &PathBuf, backup_path: &PathBuf) -> Result<(), String> {
+    if !writable_path.exists() {
+        return Ok(());
+    }
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::BackingUp);
+    std::fs::rename(writable_path, backup_path).map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())
+}
+
+fn install_new_backend_binary(app: &AppHandle, writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
     let parent = writable_path
         .parent()
         .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
     std::fs::create_dir_all(parent)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
 
-    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RemovingOld);
-
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, new_binary)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
 
     emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
-    rename_with_retry(app, &temp_path, writable_path)
+    rename_with_retry(app, &temp_path, writable_path, UpdateProgress::InstallingNew)
+}
+
+/// Restores the backed-up previous binary and restarts it, used when the
+/// freshly installed binary fails to boot or fails its healthcheck. Backend
+/// updates must never leave the user without a working backend, so this is
+/// attempted even if the failure happened mid-installation.
+async fn rollback_to_previous_backend(app: &AppHandle, writable_path: &PathBuf, backup_path: &PathBuf, reason: String) -> String {
+    if !backup_path.exists() {
+        let message = format!("{reason} (no backup available to roll back to)");
+        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+        return message;
+    }
+
+    std::fs::remove_file(writable_path).ok();
+    if let Err(rename_error) = rename_with_retry(app, backup_path, writable_path, UpdateProgress::BackingUp) {
+        let message = format!("{reason} (rollback also failed: {rename_error})");
+        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+        return message;
+    }
+
+    if spawn_backend(app).is_ok() {
+        let message = format!("{reason} (rolled back to previous version)");
+        println!("{}", LogMessage::BackendUpdateRolledBack(reason.clone()).text());
+        emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::RolledBack { message: message.clone() });
+        return message;
+    }
+
+    let message = format!("{reason} (rolled back binary but failed to restart it)");
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
+    message
+}
+
+fn take_or_create_cancellation_token(app: &AppHandle) -> CancellationToken {
+    let state = app.state::<BackendUpdateCancellation>();
+    let mut guard = state.0.lock().unwrap();
+    let token = CancellationToken::new();
+    guard.replace(token.clone());
+    token
+}
+
+fn clear_cancellation_token(app: &AppHandle) {
+    app.state::<BackendUpdateCancellation>().0.lock().unwrap().take();
+}
+
+#[tauri::command]
+pub fn cancel_backend_update(app: AppHandle) {
+    let state = app.state::<BackendUpdateCancellation>();
+    let guard = state.0.lock().unwrap();
+    if let Some(token) = guard.as_ref() {
+        token.cancel();
+    }
+}
+
+fn fail_update(app: &AppHandle, error: String) -> String {
+    clear_cancellation_token(app);
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+    error
+}
+
+const CANCELLED_ERROR: &str = "cancelled";
+
+/// Ends the update attempt after a cancellation. The `Cancelled` progress
+/// event was already emitted where the cancellation was detected, so this
+/// only clears the token and returns the sentinel error without emitting a
+/// second, contradictory `Failed` event on top of it.
+fn cancel_update(app: &AppHandle) -> String {
+    clear_cancellation_token(app);
+    CANCELLED_ERROR.to_string()
+}
+
+async fn download_new_backend_binary(
+    app: &AppHandle,
+    download_url: &str,
+    partial_path: &PathBuf,
+    cancellation: &CancellationToken,
+) -> Result<Vec<u8>, String> {
+    let bytes = download_with_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, download_url, partial_path, cancellation)
+        .await
+        .map_err(|_| {
+            if cancellation.is_cancelled() {
+                println!("{}", LogMessage::BackendUpdateCancelled.text());
+                return CANCELLED_ERROR.to_string();
+            }
+            "backend update download did not complete".to_string()
+        })?;
+
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
+    if bytes.is_empty() {
+        return Err(LogMessage::BackendDownloadFailed("downloaded binary is empty".to_string()).text());
+    }
+    Ok(bytes)
+}
+
+async fn replace_and_restart_backend(
+    app: &AppHandle,
+    writable_path: &PathBuf,
+    backup_path: &PathBuf,
+    new_binary: &[u8],
+) -> Result<(), String> {
+    kill_running_backend(app).ok();
+    kill_orphaned_backend_processes_by_name();
+    backup_current_backend_binary(app, writable_path, backup_path)?;
+
+    if let Err(install_error) = install_new_backend_binary(app, writable_path, new_binary) {
+        return Err(rollback_to_previous_backend(app, writable_path, backup_path, install_error).await);
+    }
+
+    emit_progress(app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
+    if let Err(spawn_error) = spawn_backend(app) {
+        return Err(rollback_to_previous_backend(app, writable_path, backup_path, spawn_error).await);
+    }
+
+    if !wait_for_backend_healthy(app).await {
+        let reason = "new backend binary started but did not respond to its healthcheck".to_string();
+        return Err(rollback_to_previous_backend(app, writable_path, backup_path, reason).await);
+    }
+
+    std::fs::remove_file(backup_path).ok();
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, String> {
+    let cancellation = take_or_create_cancellation_token(&app);
     emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
 
-    let previous_version = fetch_running_backend_version(&app).await;
+    let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
+    let release = fetch_latest_backend_release(&app).await.map_err(|error| fail_update(&app, error))?;
+    let download_url = extract_backend_download_url(&release).map_err(|error| fail_update(&app, error))?;
+    let partial_path = resolve_partial_download_path(&app).map_err(|error| fail_update(&app, error))?;
+    let writable_path = resolve_writable_backend_path(&app).map_err(|error| fail_update(&app, error))?;
+    let backup_path = resolve_backup_backend_path(&app).map_err(|error| fail_update(&app, error))?;
 
-    let release = match fetch_latest_backend_release(&app).await {
-        Ok(release) => release,
-        Err(error) => {
-            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
-            return Err(error);
-        }
-    };
-
-    let download_url = match extract_backend_download_url(&release) {
-        Ok(url) => url,
-        Err(error) => {
-            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
-            return Err(error);
-        }
-    };
-
-    let new_binary = match download_with_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, &download_url).await {
+    let new_binary = match download_new_backend_binary(&app, &download_url, &partial_path, &cancellation).await {
         Ok(bytes) => bytes,
-        Err(error) => {
-            let message = LogMessage::BackendDownloadFailed(error.clone()).text();
-            println!("{message}");
-            emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
-            return Err(message);
-        }
+        Err(error) if error == CANCELLED_ERROR => return Err(cancel_update(&app)),
+        Err(error) => return Err(fail_update(&app, error)),
     };
 
-    kill_running_backend(&app)?;
-    kill_orphaned_backend_processes_by_name();
-
-    let writable_path = resolve_writable_backend_path(&app)?;
-    if let Err(error) = replace_backend_binary_on_disk(&app, &writable_path, &new_binary) {
-        emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
+    if let Err(error) = replace_and_restart_backend(&app, &writable_path, &backup_path, &new_binary).await {
+        clear_cancellation_token(&app);
         return Err(error);
     }
 
-    emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
-    if let Err(error) = spawn_backend(&app) {
-        emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
-        return Err(error);
-    }
-
+    clear_cancellation_token(&app);
     let latest_version = tag_to_version_name(&release.tag_name);
-    println!(
-        "{}",
-        LogMessage::BackendUpdateInstalled(previous_version.clone().unwrap_or_default(), latest_version.clone()).text()
-    );
+    println!("{}", LogMessage::BackendUpdateInstalled(previous_version, latest_version.clone()).text());
     emit_progress(&app, BACKEND_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
 
     Ok(BackendStatus { running: true, installed: true, version: Some(latest_version) })

@@ -150,15 +150,12 @@ export function StreamingView({
   );
 }
 
-function useAnyMobileUpdateReady(): boolean {
-  const { status } = useAndroidUpdater();
-  return status === 'ready';
-}
-
 function IdleHostShell({ onPaired }: { onPaired: (pairing: PairingFromUrl) => void }) {
   const [activeSection, setActiveSection] = useState<NavSectionId>('connect');
   const { isDevModeEnabled, setDevModeEnabled, isLoaded } = useLocalDevMode();
-  const hasUpdateBadge = useAnyMobileUpdateReady();
+  const androidUpdater = useAndroidUpdater();
+  const hasUpdateBadge = androidUpdater.status === 'ready';
+  const isUpdateInstalling = androidUpdater.status === 'downloading' || androidUpdater.status === 'installing';
   const sections = resolveMobileSections(isDevModeEnabled);
 
   const openUpdatesSection = useCallback(() => {
@@ -167,10 +164,11 @@ function IdleHostShell({ onPaired }: { onPaired: (pairing: PairingFromUrl) => vo
 
   function renderActiveSection() {
     if (activeSection === 'connect') return <PairingCodeEntry signalingUrl={getSignalingUrl()} onPaired={onPaired} />;
-    if (activeSection === 'updates') return <UpdatesTab />;
+    if (activeSection === 'updates') return <UpdatesTab androidUpdater={androidUpdater} />;
     if (activeSection === 'console') return <ConsolePanel />;
     return (
       <AboutPanel
+        androidVersion={androidUpdater.currentVersion}
         isDevModeEnabled={isLoaded ? isDevModeEnabled : false}
         onDevModeChange={setDevModeEnabled}
       />
@@ -184,9 +182,11 @@ function IdleHostShell({ onPaired }: { onPaired: (pairing: PairingFromUrl) => vo
       activeSection={activeSection}
       onSelectSection={setActiveSection}
       hasUpdateBadge={hasUpdateBadge}
+      isBusy={isUpdateInstalling}
+      busyLabel="Installing the Android app update…"
     >
       {renderActiveSection()}
-      <UpdateNotificationBanner onOpenUpdates={openUpdatesSection} />
+      <UpdateNotificationBanner isUpdateReady={hasUpdateBadge} onOpenUpdates={openUpdatesSection} />
     </AppShell>
   );
 }

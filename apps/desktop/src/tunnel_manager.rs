@@ -1,5 +1,7 @@
 use crate::log_messages::LogMessage;
-use crate::update_progress::{download_with_progress, emit_progress, request_timeout, UpdateProgress, TUNNEL_UPDATE_PROGRESS_EVENT};
+use crate::update_progress::{
+    download_with_progress, emit_progress, request_timeout, CancellationToken, UpdateProgress, TUNNEL_UPDATE_PROGRESS_EVENT,
+};
 use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -59,6 +61,10 @@ fn resolve_writable_tunnel_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve_version_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(resolve_tunnel_dir(app)?.join(VERSION_FILE_NAME))
+}
+
+fn resolve_partial_download_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(resolve_tunnel_dir(app)?.join(format!("{TUNNEL_BINARY_FILENAME}.partial")))
 }
 
 fn is_tunnel_installed(app: &AppHandle) -> bool {
@@ -139,9 +145,11 @@ async fn install_latest_tunnel_binary(app: &AppHandle) -> Result<String, String>
     emit_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
     let release = fetch_latest_tunnel_release().await?;
     let download_url = extract_tunnel_download_url(&release)?;
-    let binary = download_with_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, &download_url)
+    let partial_path = resolve_partial_download_path(app)?;
+    let never_cancelled = CancellationToken::new();
+    let binary = download_with_progress(app, TUNNEL_UPDATE_PROGRESS_EVENT, &download_url, &partial_path, &never_cancelled)
         .await
-        .map_err(|error| LogMessage::TunnelDownloadFailed(error).text())?;
+        .map_err(|_| LogMessage::TunnelDownloadFailed("tunnel download failed".to_string()).text())?;
 
     let writable_path = resolve_writable_tunnel_path(app)?;
     write_tunnel_binary_to_disk(app, &writable_path, &binary)?;

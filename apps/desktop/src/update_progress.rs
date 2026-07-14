@@ -1,5 +1,8 @@
 use futures_util::StreamExt;
 use serde::Serialize;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
@@ -15,12 +18,42 @@ const REQUEST_TIMEOUT_SECS: u64 = 15;
 pub enum UpdateProgress {
     CheckingRelease,
     Downloading { received_bytes: u64, total_bytes: Option<u64>, bytes_per_sec: u64 },
+    Paused { received_bytes: u64, total_bytes: Option<u64> },
+    Verifying,
+    BackingUp,
     RemovingOld,
     InstallingNew,
     Starting,
     Done { version: String },
+    Cancelled,
     Failed { message: String },
+    RolledBack { message: String },
 }
+
+/// Cooperative cancellation flag shared between the frontend-triggered
+/// cancel command and the in-flight download loop. A plain AtomicBool is
+/// enough here because there is only ever one update in flight per
+/// updatable component (backend or tunnel), each with its own token.
+#[derive(Clone, Default)]
+pub struct CancellationToken(Arc<AtomicBool>);
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+pub struct DownloadCancelledError;
+
+const CANCELLED_MARKER: &str = "__cancelled__";
 
 pub fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
@@ -37,35 +70,89 @@ pub fn emit_progress(app: &AppHandle, event_name: &str, progress: UpdateProgress
     let _ = app.emit(event_name, progress);
 }
 
-/// Downloads a URL with a per-request timeout, emitting incremental
-/// `Downloading` progress events (received/total bytes and a rolling
-/// bytes-per-second estimate) at most once every ~150ms so the frontend
-/// gets a live, non-spammy progress bar.
+fn read_partial_download_size(partial_path: &Path) -> u64 {
+    std::fs::metadata(partial_path).map(|metadata| metadata.len()).unwrap_or(0)
+}
+
+async fn open_download_response(
+    client: &reqwest::Client,
+    url: &str,
+    resume_from_bytes: u64,
+) -> Result<reqwest::Response, String> {
+    let mut request = client.get(url);
+    if resume_from_bytes > 0 {
+        request = request.header("Range", format!("bytes={resume_from_bytes}-"));
+    }
+
+    let response = request.send().await.map_err(|error| format!("download request failed: {error}"))?;
+
+    if !response.status().is_success() && response.status().as_u16() != 206 {
+        return Err(format!("download request returned HTTP {}", response.status()));
+    }
+
+    Ok(response)
+}
+
+/// Downloads a URL to `partial_path` with a per-request timeout, emitting
+/// incremental `Downloading` progress events (received/total bytes and a
+/// rolling bytes-per-second estimate) at most once every ~150ms.
+///
+/// The download is resumable: if `partial_path` already has bytes on disk
+/// from a previous attempt, this issues a `Range` request to continue from
+/// where it left off instead of re-downloading from zero. It is also
+/// cancellable through `cancellation`, checked between chunks so a cancel
+/// request lands within one network read instead of waiting for the whole
+/// transfer to finish.
 pub async fn download_with_progress(
     app: &AppHandle,
     event_name: &str,
     url: &str,
+    partial_path: &Path,
+    cancellation: &CancellationToken,
+) -> Result<Vec<u8>, DownloadCancelledError> {
+    download_with_progress_inner(app, event_name, url, partial_path, cancellation)
+        .await
+        .map_err(|error| {
+            if error != CANCELLED_MARKER {
+                emit_progress(app, event_name, UpdateProgress::Failed { message: error });
+            }
+            DownloadCancelledError
+        })
+}
+
+async fn download_with_progress_inner(
+    app: &AppHandle,
+    event_name: &str,
+    url: &str,
+    partial_path: &Path,
+    cancellation: &CancellationToken,
 ) -> Result<Vec<u8>, String> {
     let client = build_http_client(DOWNLOAD_TIMEOUT_SECS)?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("download request failed: {error}"))?;
+    let resume_from_bytes = read_partial_download_size(partial_path);
+    let response = open_download_response(&client, url, resume_from_bytes).await?;
 
-    if !response.status().is_success() {
-        return Err(format!("download request returned HTTP {}", response.status()));
-    }
+    let is_resumed = response.status().as_u16() == 206;
+    let content_length = response.content_length();
+    let total_bytes = if is_resumed { content_length.map(|remaining| remaining + resume_from_bytes) } else { content_length };
 
-    let total_bytes = response.content_length();
-    let mut received_bytes: u64 = 0;
-    let mut buffer: Vec<u8> = Vec::with_capacity(total_bytes.unwrap_or(0) as usize);
+    let mut buffer: Vec<u8> = if is_resumed {
+        std::fs::read(partial_path).unwrap_or_default()
+    } else {
+        Vec::with_capacity(total_bytes.unwrap_or(0) as usize)
+    };
+    let mut received_bytes: u64 = buffer.len() as u64;
     let mut stream = response.bytes_stream();
 
     let started_at = Instant::now();
     let mut last_emit_at = Instant::now();
 
     while let Some(chunk_result) = stream.next().await {
+        if cancellation.is_cancelled() {
+            std::fs::write(partial_path, &buffer).ok();
+            emit_progress(app, event_name, UpdateProgress::Cancelled);
+            return Err(CANCELLED_MARKER.to_string());
+        }
+
         let chunk = chunk_result.map_err(|error| format!("download stream interrupted: {error}"))?;
         received_bytes += chunk.len() as u64;
         buffer.extend_from_slice(&chunk);
@@ -84,11 +171,8 @@ pub async fn download_with_progress(
 
     let elapsed_secs = started_at.elapsed().as_secs_f64().max(0.001);
     let bytes_per_sec = (received_bytes as f64 / elapsed_secs) as u64;
-    emit_progress(
-        app,
-        event_name,
-        UpdateProgress::Downloading { received_bytes, total_bytes, bytes_per_sec },
-    );
+    emit_progress(app, event_name, UpdateProgress::Downloading { received_bytes, total_bytes, bytes_per_sec });
 
+    std::fs::remove_file(partial_path).ok();
     Ok(buffer)
 }

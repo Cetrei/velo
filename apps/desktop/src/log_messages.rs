@@ -25,6 +25,8 @@ pub enum LogMessage {
     BackendReplaceFailed(String),
     BackendReplaceRetrying(u32, String),
     BackendUpdateInstalled(String, String),
+    BackendUpdateRolledBack(String),
+    BackendUpdateCancelled,
     BackendDataDirResolveFailed,
     BackendUninstallFailed(String),
     BackendUninstalled,
@@ -138,6 +140,12 @@ impl LogMessage {
             }
             LogMessage::BackendUpdateInstalled(from, to) => {
                 format!("[BACKEND_MANAGER] Backend updated from {from} to {to} and restarted")
+            }
+            LogMessage::BackendUpdateRolledBack(reason) => {
+                format!("[BACKEND_MANAGER] Backend update failed and was rolled back to the previous binary: {reason}")
+            }
+            LogMessage::BackendUpdateCancelled => {
+                "[BACKEND_MANAGER] Backend update cancelled by user request".to_string()
             }
             LogMessage::BackendDataDirResolveFailed => {
                 "[BACKEND_MANAGER] Failed to resolve the app data directory for the writable backend binary".to_string()

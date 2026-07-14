@@ -1,30 +1,9 @@
-import { useUpdater } from '../hooks/useUpdater';
-import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
-import { useBackendUpdater } from '../hooks/useBackendUpdater';
-import { getClientEnvironment } from '../lib/environment';
-
 interface UpdateNotificationBannerProps {
+  isUpdateReady: boolean;
   onOpenUpdates: () => void;
 }
 
-function useAnyUpdateReady(): boolean {
-  const environment = getClientEnvironment();
-  const desktopUpdater = useUpdater();
-  const androidUpdater = useAndroidUpdater();
-  const backendUpdater = useBackendUpdater();
-
-  if (environment === 'DESKTOP_VIEWER') {
-    return desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
-  }
-  if (environment === 'MOBILE_HOST') {
-    return androidUpdater.status === 'ready';
-  }
-  return false;
-}
-
-export function UpdateNotificationBanner({ onOpenUpdates }: UpdateNotificationBannerProps) {
-  const isUpdateReady = useAnyUpdateReady();
-
+export function UpdateNotificationBanner({ isUpdateReady, onOpenUpdates }: UpdateNotificationBannerProps) {
   if (!isUpdateReady) return null;
 
   return (

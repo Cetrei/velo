@@ -1,12 +1,12 @@
 import { VeloIcon } from './VeloIcon';
-import { useUpdater } from '../hooks/useUpdater';
-import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
-import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { getClientEnvironment } from '../lib/environment';
 
 const REPO_URL = 'https://github.com/Cetrei/velo';
 
 interface AboutPanelProps {
+  desktopVersion?: string | null;
+  backendVersion?: string | null;
+  androidVersion?: string | null;
   isDevModeEnabled?: boolean;
   onDevModeChange?: (nextEnabled: boolean) => void;
 }
@@ -35,24 +35,20 @@ function AboutRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DesktopVersionRows() {
-  const { currentVersion } = useUpdater();
-  const { currentVersion: backendVersion } = useBackendUpdater();
-
+function DesktopVersionRows({ desktopVersion, backendVersion }: { desktopVersion?: string | null; backendVersion?: string | null }) {
   return (
     <>
-      <AboutRow label="Desktop app" value={currentVersion ? `v${currentVersion}` : 'Unknown'} />
+      <AboutRow label="Desktop app" value={desktopVersion ? `v${desktopVersion}` : 'Unknown'} />
       <AboutRow label="Backend" value={backendVersion ? `v${backendVersion}` : 'Not running'} />
     </>
   );
 }
 
-function AndroidVersionRow() {
-  const { currentVersion } = useAndroidUpdater();
-  return <AboutRow label="Android app" value={currentVersion ? `v${currentVersion}` : 'Unknown'} />;
+function AndroidVersionRow({ androidVersion }: { androidVersion?: string | null }) {
+  return <AboutRow label="Android app" value={androidVersion ? `v${androidVersion}` : 'Unknown'} />;
 }
 
-export function AboutPanel({ isDevModeEnabled, onDevModeChange }: AboutPanelProps) {
+export function AboutPanel({ desktopVersion, backendVersion, androidVersion, isDevModeEnabled, onDevModeChange }: AboutPanelProps) {
   const environment = getClientEnvironment();
 
   return (
@@ -65,8 +61,8 @@ export function AboutPanel({ isDevModeEnabled, onDevModeChange }: AboutPanelProp
         </span>
       </div>
       <div className="flex w-full flex-col gap-2">
-        {environment === 'DESKTOP_VIEWER' && <DesktopVersionRows />}
-        {environment === 'MOBILE_HOST' && <AndroidVersionRow />}
+        {environment === 'DESKTOP_VIEWER' && <DesktopVersionRows desktopVersion={desktopVersion} backendVersion={backendVersion} />}
+        {environment === 'MOBILE_HOST' && <AndroidVersionRow androidVersion={androidVersion} />}
         {environment === 'MOBILE_HOST' && isDevModeEnabled !== undefined && onDevModeChange && (
           <MobileDevModeToggle isDevModeEnabled={isDevModeEnabled} onDevModeChange={onDevModeChange} />
         )}

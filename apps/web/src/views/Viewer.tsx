@@ -96,21 +96,18 @@ function PairingReadyPanel({
   );
 }
 
-function useAnyDesktopUpdateReady(): boolean {
-  const desktopUpdater = useUpdater();
-  const backendUpdater = useBackendUpdater();
-  return desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
-}
-
 export function Viewer() {
   const signalingUrl = useSignalingUrl();
   const [activeSection, setActiveSection] = useState<NavSectionId>('connect');
   const { pairing, error, isGenerating, generate, clear } = usePairingSession(signalingUrl);
   const { config } = useConfig();
   const devModeEnabled = config?.behavior.dev_mode_enabled ?? false;
-  const { runCheck: runDesktopUpdateCheck } = useUpdater();
-  const { runCheck: runBackendUpdateCheck } = useBackendUpdater();
-  const hasUpdateBadge = useAnyDesktopUpdateReady();
+  const desktopUpdater = useUpdater();
+  const backendUpdater = useBackendUpdater();
+  const { runCheck: runDesktopUpdateCheck } = desktopUpdater;
+  const { runCheck: runBackendUpdateCheck } = backendUpdater;
+  const hasUpdateBadge = desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
+  const isUpdateInstalling = desktopUpdater.status === 'installing' || backendUpdater.status === 'installing';
   const sections = resolveDesktopSections(devModeEnabled);
 
   const openUpdatesSection = useCallback(() => {
@@ -187,9 +184,9 @@ export function Viewer() {
   function renderActiveSection() {
     if (activeSection === 'connect') return renderConnectSection();
     if (activeSection === 'settings') return <SettingsPanel />;
-    if (activeSection === 'updates') return <UpdatesTab />;
+    if (activeSection === 'updates') return <UpdatesTab desktopUpdater={desktopUpdater} backendUpdater={backendUpdater} />;
     if (activeSection === 'console') return <ConsolePanel />;
-    return <AboutPanel />;
+    return <AboutPanel desktopVersion={desktopUpdater.currentVersion} backendVersion={backendUpdater.currentVersion} />;
   }
 
   return (
@@ -199,9 +196,11 @@ export function Viewer() {
       activeSection={activeSection}
       onSelectSection={setActiveSection}
       hasUpdateBadge={hasUpdateBadge}
+      isBusy={isUpdateInstalling}
+      busyLabel="Updating, this only takes a moment\u2026"
     >
       {renderActiveSection()}
-      <UpdateNotificationBanner onOpenUpdates={openUpdatesSection} />
+      <UpdateNotificationBanner isUpdateReady={hasUpdateBadge} onOpenUpdates={openUpdatesSection} />
     </AppShell>
   );
 }
