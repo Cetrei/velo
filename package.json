@@ -17,7 +17,6 @@
     "build:android": "bun scripts/run-gradle-task.ts assembleRelease && bun scripts/collect-android-artifact.mjs",
     "build:server": "bun --filter server compile",
     "build:all": "bun run build:desktop && bun run build:android",
-    "sync:version": "bun scripts/sync-version.ts",
 
     "typecheck:shared": "cd packages/shared && bun run typecheck",
     "typecheck:server": "cd apps/server && bun run typecheck",
@@ -26,9 +25,10 @@
     "check:rust": "bun run build:server && bun scripts/prepare-backend-sidecar.mjs && cargo check --manifest-path apps/desktop/Cargo.toml && cargo check --manifest-path crates/vcam-driver/Cargo.toml",
 
     "verify:release": "bun run install:all && bun run typecheck:all && bun run check:rust",
-    "release": "bun run verify:release && bun scripts/release.ts",
+    "release:app": "bun run verify:release && bun scripts/release.ts",
+    "release:backend": "bun run typecheck:server && bun scripts/release.ts --backend",
 
-    "deploy:web": "cd apps/web && bun run deploy",
+    "release:web": "cd apps/web && bun run deploy",
 
     "install:root": "bun install",
     "install:server": "cd apps/server && bun install",

@@ -1,8 +1,10 @@
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const BACKEND_VERSION_TAG_PATTERN = /^backend-v(\d+)\.(\d+)\.(\d+)$/;
+const BACKEND_FLAG = '--backend';
 
 type SemVer = [number, number, number];
 type BumpKind = 'major' | 'minor' | 'patch';
+type ReleaseTarget = 'app' | 'backend';
 
 function parseBumpFlag(arg: string): BumpKind | null {
   if (arg === '--major') return 'major';
@@ -11,13 +13,15 @@ function parseBumpFlag(arg: string): BumpKind | null {
   return null;
 }
 
-function listVersionTags(): string[] {
-  const result = Bun.spawnSync(['git', 'tag', '--list', 'v*']);
+function listVersionTags(target: ReleaseTarget): string[] {
+  const pattern = target === 'backend' ? 'backend-v*' : 'v*';
+  const result = Bun.spawnSync(['git', 'tag', '--list', pattern]);
   return result.stdout.toString().split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
-function parseSemverTag(tag: string): SemVer | null {
-  const match = tag.match(VERSION_TAG_PATTERN);
+function parseSemverTag(tag: string, target: ReleaseTarget): SemVer | null {
+  const pattern = target === 'backend' ? BACKEND_VERSION_TAG_PATTERN : VERSION_TAG_PATTERN;
+  const match = tag.match(pattern);
   if (!match) return null;
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
@@ -29,37 +33,46 @@ function compareSemver(a: SemVer, b: SemVer): number {
   return 0;
 }
 
-function findLatestVersionTag(): SemVer {
-  const parsed = listVersionTags()
-    .map(parseSemverTag)
+function findLatestVersionTag(target: ReleaseTarget): SemVer {
+  const parsed = listVersionTags(target)
+    .map((tag) => parseSemverTag(tag, target))
     .filter((entry): entry is SemVer => entry !== null);
   if (parsed.length === 0) return [0, 0, 0];
   return parsed.reduce((latest, candidate) => (compareSemver(candidate, latest) > 0 ? candidate : latest));
 }
 
-function bumpSemver([major, minor, patch]: SemVer, kind: BumpKind): string {
-  if (kind === 'major') return `v${major + 1}.0.0`;
-  if (kind === 'minor') return `v${major}.${minor + 1}.0`;
-  return `v${major}.${minor}.${patch + 1}`;
+function bumpSemver([major, minor, patch]: SemVer, kind: BumpKind, target: ReleaseTarget): string {
+  const prefix = target === 'backend' ? 'backend-v' : 'v';
+  if (kind === 'major') return `${prefix}${major + 1}.0.0`;
+  if (kind === 'minor') return `${prefix}${major}.${minor + 1}.0`;
+  return `${prefix}${major}.${minor}.${patch + 1}`;
 }
 
-function resolveVersionTagFromBumpFlag(kind: BumpKind): string {
-  const latest = findLatestVersionTag();
-  const nextTag = bumpSemver(latest, kind);
-  console.log(`[RELEASE] Latest tag v${latest.join('.')}, bumping ${kind} -> ${nextTag}`);
+function resolveVersionTagFromBumpFlag(kind: BumpKind, target: ReleaseTarget): string {
+  const latest = findLatestVersionTag(target);
+  const nextTag = bumpSemver(latest, kind, target);
+  const latestLabel = target === 'backend' ? `backend-v${latest.join('.')}` : `v${latest.join('.')}`;
+  console.log(`[RELEASE] Latest ${target} tag ${latestLabel}, bumping ${kind} -> ${nextTag}`);
   return nextTag;
 }
 
+function parseReleaseTarget(): ReleaseTarget {
+  const args = process.argv.slice(2);
+  return args.includes(BACKEND_FLAG) ? 'backend' : 'app';
+}
+
 function parseVersionArg(): string {
-  const arg = process.argv[2];
+  const args = process.argv.slice(2);
+  const arg = args.find((value) => value !== BACKEND_FLAG);
   if (!arg) {
-    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z | backend-vX.Y.Z | --major | --minor | --patch');
+    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z | backend-vX.Y.Z | --major | --minor | --patch [--backend]');
     process.exit(1);
   }
 
   const bumpKind = parseBumpFlag(arg);
   if (bumpKind) {
-    return resolveVersionTagFromBumpFlag(bumpKind);
+    const target = parseReleaseTarget();
+    return resolveVersionTagFromBumpFlag(bumpKind, target);
   }
 
   if (!VERSION_TAG_PATTERN.test(arg) && !BACKEND_VERSION_TAG_PATTERN.test(arg)) {
