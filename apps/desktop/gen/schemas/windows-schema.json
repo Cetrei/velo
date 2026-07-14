@@ -177,16 +177,22 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`",
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`"
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`"
         },
         {
           "description": "Allows checking GitHub Releases for a newer independently-versioned backend build.",
           "type": "string",
           "const": "allow-check-backend-update",
           "markdownDescription": "Allows checking GitHub Releases for a newer independently-versioned backend build."
+        },
+        {
+          "description": "Allows checking cloudflare/cloudflared's GitHub Releases for a newer cloudflared build.",
+          "type": "string",
+          "const": "allow-check-tunnel-update",
+          "markdownDescription": "Allows checking cloudflare/cloudflared's GitHub Releases for a newer cloudflared build."
         },
         {
           "description": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window.",
@@ -207,6 +213,12 @@
           "markdownDescription": "Allows reading the bundled read-only system.yml config."
         },
         {
+          "description": "Allows reading the currently managed cloudflared tunnel's running state and installed version.",
+          "type": "string",
+          "const": "allow-get-tunnel-status",
+          "markdownDescription": "Allows reading the currently managed cloudflared tunnel's running state and installed version."
+        },
+        {
           "description": "Allows reading the user's writable user.yml config.",
           "type": "string",
           "const": "allow-get-user-config",
@@ -223,6 +235,12 @@
           "type": "string",
           "const": "allow-push-frame",
           "markdownDescription": "Allows pushing a decoded WebRTC video frame into the virtual camera driver."
+        },
+        {
+          "description": "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings.",
+          "type": "string",
+          "const": "allow-restart-managed-tunnel",
+          "markdownDescription": "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings."
         },
         {
           "description": "Allows writing the user's writable user.yml config.",
