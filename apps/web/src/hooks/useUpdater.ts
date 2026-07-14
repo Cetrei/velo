@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
+import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getClientEnvironment } from '../lib/environment';
 
@@ -7,7 +8,8 @@ export type UpdaterStatus = 'idle' | 'checking' | 'ready' | 'installing' | 'erro
 
 export function useUpdater() {
   const [status, setStatus] = useState<UpdaterStatus>('idle');
-  const [version, setVersion] = useState<string | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const pendingUpdateRef = useRef<Update | null>(null);
 
   const runCheck = useCallback(async () => {
@@ -15,15 +17,19 @@ export function useUpdater() {
 
     setStatus('checking');
     try {
-      const update = await check();
+      const [installedVersion, update] = await Promise.all([getVersion(), check()]);
+      setCurrentVersion(installedVersion);
+
       if (!update) {
+        setLatestVersion(null);
         setStatus('idle');
         return;
       }
       pendingUpdateRef.current = update;
-      setVersion(update.version);
+      setLatestVersion(update.version);
       setStatus('ready');
-    } catch {
+    } catch (error) {
+      console.warn('[DESKTOP_UPDATER] failed to check for desktop updates', error);
       setStatus('error');
     }
   }, []);
@@ -40,7 +46,8 @@ export function useUpdater() {
     try {
       await update.downloadAndInstall();
       await relaunch();
-    } catch {
+    } catch (error) {
+      console.warn('[DESKTOP_UPDATER] failed to install desktop update', error);
       setStatus('error');
     }
   }, []);
@@ -49,5 +56,5 @@ export function useUpdater() {
     setStatus('idle');
   }, []);
 
-  return { status, version, runCheck, installNow, dismiss };
+  return { status, currentVersion, latestVersion, runCheck, installNow, dismiss };
 }

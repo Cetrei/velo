@@ -48,6 +48,21 @@ identifier = "allow-uninstall-backend"
 description = "Allows stopping the backend sidecar and removing its binary and data directory from disk."
 commands.allow = ["uninstall_backend"]
 
+[[permission]]
+identifier = "allow-get-tunnel-status"
+description = "Allows reading the currently managed cloudflared tunnel's running state and installed version."
+commands.allow = ["get_tunnel_status"]
+
+[[permission]]
+identifier = "allow-check-tunnel-update"
+description = "Allows checking cloudflare/cloudflared's GitHub Releases for a newer cloudflared build."
+commands.allow = ["check_tunnel_update"]
+
+[[permission]]
+identifier = "allow-restart-managed-tunnel"
+description = "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings."
+commands.allow = ["restart_managed_tunnel"]
+
 [[set]]
 identifier = "default"
 description = "Default permission set granting access to all of Velo's own app-level commands."
@@ -62,4 +77,7 @@ permissions = [
   "allow-get-backend-status",
   "allow-start-backend",
   "allow-uninstall-backend",
+  "allow-get-tunnel-status",
+  "allow-check-tunnel-update",
+  "allow-restart-managed-tunnel",
 ]

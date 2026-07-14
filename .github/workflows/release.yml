@@ -183,6 +183,7 @@ jobs:
           files: bin/android/*.apk
 
   backend:
+    if: ${{ startsWith(github.ref_name, 'backend-v') }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -225,6 +226,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          make_latest: "false"
           tag_name: ${{ github.ref_name }}
           files: bin/backend/*.exe
+
+  publish-app-release:
+    needs: [desktop, android]
+    if: ${{ success() && !startsWith(github.ref_name, 'backend-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release so auto-updaters can find it
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit ${{ github.ref_name }} --draft=false --latest --repo ${{ github.repository }}
+
+  publish-backend-release:
+    needs: [backend]
+    if: ${{ success() && startsWith(github.ref_name, 'backend-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release so the Backend updater can find it
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit ${{ github.ref_name }} --draft=false --latest=false --repo ${{ github.repository }}
 

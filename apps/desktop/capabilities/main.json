@@ -21,6 +21,9 @@
     "allow-install-backend-update",
     "allow-get-backend-status",
     "allow-start-backend",
-    "allow-uninstall-backend"
+    "allow-uninstall-backend",
+    "allow-get-tunnel-status",
+    "allow-check-tunnel-update",
+    "allow-restart-managed-tunnel"
   ]
 }

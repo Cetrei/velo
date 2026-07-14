@@ -53,12 +53,19 @@ function UpdateRow({
 }
 
 function DesktopAppUpdateRow() {
-  const { status, version, runCheck, installNow } = useUpdater();
+  const { status, currentVersion, latestVersion, runCheck, installNow } = useUpdater();
+
+  function describeStatus(): string {
+    if (status === 'checking') return currentVersion ? `Checking, currently v${currentVersion}\u2026` : 'Checking\u2026';
+    if (status === 'error') return currentVersion ? `Check failed, currently v${currentVersion}` : 'Check failed';
+    if (status === 'ready') return `Update available: v${latestVersion} (currently v${currentVersion})`;
+    return currentVersion ? `Up to date (v${currentVersion})` : 'Up to date';
+  }
 
   return (
     <UpdateRow
       label="Desktop app"
-      currentVersionLabel={status === 'ready' ? `Update available: v${version}` : 'Up to date'}
+      currentVersionLabel={describeStatus()}
       isChecking={status === 'checking'}
       isUpdateReady={status === 'ready'}
       isInstalling={status === 'installing'}
@@ -69,12 +76,19 @@ function DesktopAppUpdateRow() {
 }
 
 function AndroidAppUpdateRow() {
-  const { status, version, runCheck, installNow } = useAndroidUpdater();
+  const { status, currentVersion, version, runCheck, installNow } = useAndroidUpdater();
+
+  function describeStatus(): string {
+    if (status === 'checking') return currentVersion ? `Checking, currently v${currentVersion}\u2026` : 'Checking\u2026';
+    if (status === 'error') return currentVersion ? `Check failed, currently v${currentVersion}` : 'Check failed';
+    if (status === 'ready') return `Update available: v${version} (currently v${currentVersion})`;
+    return currentVersion ? `Up to date (v${currentVersion})` : 'Up to date';
+  }
 
   return (
     <UpdateRow
       label="Android app"
-      currentVersionLabel={status === 'ready' ? `Update available: v${version}` : 'Up to date'}
+      currentVersionLabel={describeStatus()}
       isChecking={status === 'checking'}
       isUpdateReady={status === 'ready'}
       isInstalling={status === 'downloading' || status === 'installing'}

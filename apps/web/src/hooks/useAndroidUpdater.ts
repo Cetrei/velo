@@ -25,6 +25,7 @@ function isNewerVersion(candidate: string, current: string): boolean {
 
 export function useAndroidUpdater() {
   const [status, setStatus] = useState<AndroidUpdaterStatus>('idle');
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [availableRelease, setAvailableRelease] = useState<VeloRelease | null>(null);
 
   const runCheck = useCallback(async () => {
@@ -33,16 +34,19 @@ export function useAndroidUpdater() {
     setStatus('checking');
     try {
       const [appInfo, releases] = await Promise.all([App.getInfo(), fetchPublishedReleases(getReleasesRepo())]);
+      setCurrentVersion(appInfo.version);
       const latestWithAndroidAsset = releases.find((release) => release.androidAsset !== null);
 
       if (!latestWithAndroidAsset || !isNewerVersion(latestWithAndroidAsset.versionName, appInfo.version)) {
+        setAvailableRelease(null);
         setStatus('idle');
         return;
       }
 
       setAvailableRelease(latestWithAndroidAsset);
       setStatus('ready');
-    } catch {
+    } catch (error) {
+      console.warn('[ANDROID_UPDATER] failed to check for android updates', error);
       setStatus('error');
     }
   }, []);
@@ -77,5 +81,5 @@ export function useAndroidUpdater() {
     setStatus('idle');
   }, []);
 
-  return { status, version: availableRelease?.versionName ?? null, runCheck, installNow, dismiss };
+  return { status, currentVersion, version: availableRelease?.versionName ?? null, runCheck, installNow, dismiss };
 }
