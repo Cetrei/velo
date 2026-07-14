@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { SlidersHorizontal } from 'lucide-react';
 
 export type SettingsTabId = 'user' | 'system';
 
@@ -37,11 +38,23 @@ export function SettingsTabs({
   }
 
   if (visibleTabs.length === 1) {
-    return <div className="flex flex-col gap-3 rounded-2xl bg-velo-surface p-4">{renderUserTab()}</div>;
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl bg-velo-surface p-4">
+        <div className="flex items-center gap-2 border-b border-velo-background pb-3">
+          <SlidersHorizontal size={16} className="text-velo-indigo" />
+          <h2 className="text-sm font-medium text-velo-text-primary">Settings</h2>
+        </div>
+        {renderUserTab()}
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-velo-surface p-4">
+      <div className="flex items-center gap-2 border-b border-velo-background pb-3">
+        <SlidersHorizontal size={16} className="text-velo-indigo" />
+        <h2 className="text-sm font-medium text-velo-text-primary">Settings</h2>
+      </div>
       <div className="flex gap-1 border-b border-velo-background pb-2">
         {visibleTabs.map((tab) => (
           <button

@@ -334,6 +334,13 @@ pub fn stop_backend(app: AppHandle) -> Result<BackendStatus, String> {
     Ok(BackendStatus { running: false, installed: is_backend_installed(&app), version: None })
 }
 
+const BACKEND_UNINSTALL_MAX_ATTEMPTS: u32 = 5;
+const BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS: u64 = 200;
+
+/// Retries removing the backend directory a few times before giving up.
+/// taskkill returns as soon as it requests process termination, not once
+/// Windows has actually released the file handle, so the binary can still
+/// be locked for a brief window immediately after the kill call returns.
 fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
     let writable_path = resolve_writable_backend_path(app)?;
     if !writable_path.exists() {
@@ -342,13 +349,25 @@ fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
     let backend_dir = writable_path
         .parent()
         .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
-    std::fs::remove_dir_all(backend_dir)
-        .map_err(|error| LogMessage::BackendUninstallFailed(error.to_string()).text())
+
+    let mut last_error = String::new();
+    for attempt in 1..=BACKEND_UNINSTALL_MAX_ATTEMPTS {
+        match std::fs::remove_dir_all(backend_dir) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = error.to_string();
+                let delay = BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS * attempt as u64;
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+        }
+    }
+    Err(LogMessage::BackendUninstallFailed(last_error).text())
 }
 
 #[tauri::command]
 pub fn uninstall_backend(app: AppHandle) -> Result<BackendStatus, String> {
     kill_running_backend(&app)?;
+    kill_orphaned_backend_processes_by_name();
     remove_backend_binary_and_directory(&app)?;
     println!("{}", LogMessage::BackendUninstalled.text());
     Ok(BackendStatus { running: false, installed: false, version: None })

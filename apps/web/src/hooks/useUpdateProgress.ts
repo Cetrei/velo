@@ -73,29 +73,48 @@ export function formatBytesPerSec(bytesPerSec: number): string {
   return `${formatBytes(bytesPerSec)}/s`;
 }
 
+export function formatSecondsRemaining(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s left`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes} min left`;
+}
+
+export function estimateSecondsRemaining(progress: UpdateProgressEvent | null): number | null {
+  if (!progress || progress.phase !== 'downloading') return null;
+  const { received_bytes: received, total_bytes: total, bytes_per_sec: speed } = progress;
+  if (!total || !speed || received === undefined || speed <= 0) return null;
+  const remainingBytes = total - received;
+  if (remainingBytes <= 0) return 0;
+  return remainingBytes / speed;
+}
+
 export function describeProgressPhase(progress: UpdateProgressEvent | null): string {
   if (!progress) return '';
   switch (progress.phase) {
     case 'checking_release':
-      return 'Checking latest release…';
+      return 'Checking for the latest release…';
     case 'downloading': {
       const received = formatBytes(progress.received_bytes ?? 0);
       const total = progress.total_bytes ? formatBytes(progress.total_bytes) : null;
       const speed = formatBytesPerSec(progress.bytes_per_sec ?? 0);
-      return total ? `Downloading ${received} / ${total} (${speed})` : `Downloading ${received} (${speed})`;
+      const secondsRemaining = estimateSecondsRemaining(progress);
+      const remainingLabel = secondsRemaining !== null ? `, ${formatSecondsRemaining(secondsRemaining)}` : '';
+      return total
+        ? `Downloading ${received} of ${total} (${speed}${remainingLabel})`
+        : `Downloading ${received} (${speed})`;
     }
     case 'paused':
       return 'Paused, ready to resume…';
     case 'verifying':
       return 'Verifying download…';
     case 'backing_up':
-      return 'Backing up current version…';
+      return 'Backing up the current version…';
     case 'removing_old':
-      return 'Removing old binary…';
+      return 'Removing the old version…';
     case 'installing_new':
-      return 'Installing new binary…';
+      return 'Installing the new version…';
     case 'starting':
-      return 'Starting…';
+      return 'Starting the updated backend…';
     case 'done':
       return progress.version ? `Updated to ${progress.version}` : 'Update complete';
     case 'cancelled':

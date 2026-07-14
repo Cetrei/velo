@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-react';
 import { VeloIcon } from './VeloIcon';
 import { getClientEnvironment } from '../lib/environment';
 
@@ -52,23 +53,31 @@ export function AboutPanel({ desktopVersion, backendVersion, androidVersion, isD
   const environment = getClientEnvironment();
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl bg-velo-surface p-6 text-center">
-      <VeloIcon size={56} />
-      <div className="flex flex-col gap-1">
-        <span className="text-lg font-semibold text-velo-text-primary">Velo</span>
-        <span className="text-sm text-velo-text-secondary">
-          Turns an Android phone into a Windows virtual camera over WebRTC.
-        </span>
+    <div className="flex flex-col gap-4 rounded-2xl bg-velo-surface p-4">
+      <div className="flex flex-col items-center gap-3 border-b border-velo-background pb-4 text-center">
+        <VeloIcon size={48} />
+        <div className="flex flex-col gap-1">
+          <span className="text-base font-semibold text-velo-text-primary">Velo</span>
+          <span className="text-sm text-velo-text-secondary">
+            Turns an Android phone into a Windows virtual camera over WebRTC.
+          </span>
+        </div>
       </div>
-      <div className="flex w-full flex-col gap-2">
+      <div className="flex flex-col gap-2">
         {environment === 'DESKTOP_VIEWER' && <DesktopVersionRows desktopVersion={desktopVersion} backendVersion={backendVersion} />}
         {environment === 'MOBILE_HOST' && <AndroidVersionRow androidVersion={androidVersion} />}
         {environment === 'MOBILE_HOST' && isDevModeEnabled !== undefined && onDevModeChange && (
           <MobileDevModeToggle isDevModeEnabled={isDevModeEnabled} onDevModeChange={onDevModeChange} />
         )}
       </div>
-      <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-xs text-velo-indigo underline">
+      <a
+        href={REPO_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-center gap-1.5 text-xs text-velo-indigo transition-colors hover:text-velo-text-primary"
+      >
         Source and documentation
+        <ExternalLink size={11} />
       </a>
     </div>
   );

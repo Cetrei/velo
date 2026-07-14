@@ -107,7 +107,7 @@ export function Viewer() {
   const { runCheck: runDesktopUpdateCheck } = desktopUpdater;
   const { runCheck: runBackendUpdateCheck } = backendUpdater;
   const hasUpdateBadge = desktopUpdater.status === 'ready' || backendUpdater.status === 'ready';
-  const isUpdateInstalling = desktopUpdater.status === 'installing' || backendUpdater.status === 'installing';
+  const isAppUpdateInstalling = desktopUpdater.status === 'installing';
   const sections = resolveDesktopSections(devModeEnabled);
 
   const openUpdatesSection = useCallback(() => {
@@ -196,8 +196,8 @@ export function Viewer() {
       activeSection={activeSection}
       onSelectSection={setActiveSection}
       hasUpdateBadge={hasUpdateBadge}
-      isBusy={isUpdateInstalling}
-      busyLabel="Updating, this only takes a moment\u2026"
+      isBusy={isAppUpdateInstalling}
+      busyLabel="Updating Velo, this only takes a moment\u2026"
     >
       {renderActiveSection()}
       <UpdateNotificationBanner isUpdateReady={hasUpdateBadge} onOpenUpdates={openUpdatesSection} />

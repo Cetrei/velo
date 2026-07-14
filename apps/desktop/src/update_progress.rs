@@ -10,7 +10,8 @@ pub const BACKEND_UPDATE_PROGRESS_EVENT: &str = "backend-update-progress";
 pub const TUNNEL_UPDATE_PROGRESS_EVENT: &str = "tunnel-update-progress";
 
 const PROGRESS_EMIT_INTERVAL_MS: u128 = 150;
-const DOWNLOAD_TIMEOUT_SECS: u64 = 30;
+const DOWNLOAD_CONNECT_TIMEOUT_SECS: u64 = 30;
+const DOWNLOAD_STALL_TIMEOUT_SECS: u64 = 30;
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Clone, Serialize)]
@@ -58,6 +59,21 @@ const CANCELLED_MARKER: &str = "__cancelled__";
 pub fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|error| format!("failed to build HTTP client: {error}"))
+}
+
+/// Builds a client for large, potentially long-running downloads. Unlike
+/// `build_http_client`, this has no total-request timeout, since a full
+/// backend binary can legitimately take longer than a short fixed window
+/// to download on a slow connection. `connect_timeout` still bounds how
+/// long establishing the TCP/TLS connection itself can take, and
+/// `read_timeout` aborts the request if no bytes arrive for a stretch,
+/// which is what actually indicates a stalled or dead connection.
+fn build_download_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(DOWNLOAD_CONNECT_TIMEOUT_SECS))
+        .read_timeout(std::time::Duration::from_secs(DOWNLOAD_STALL_TIMEOUT_SECS))
         .build()
         .map_err(|error| format!("failed to build HTTP client: {error}"))
 }
@@ -127,7 +143,7 @@ async fn download_with_progress_inner(
     partial_path: &Path,
     cancellation: &CancellationToken,
 ) -> Result<Vec<u8>, String> {
-    let client = build_http_client(DOWNLOAD_TIMEOUT_SECS)?;
+    let client = build_download_http_client()?;
     let resume_from_bytes = read_partial_download_size(partial_path);
     let response = open_download_response(&client, url, resume_from_bytes).await?;
 

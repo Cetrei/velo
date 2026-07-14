@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Play, Square, RotateCw, Loader2 } from 'lucide-react';
+import { Copy, Check, Play, Square, RotateCw, Loader2, Terminal } from 'lucide-react';
 import { useBackendUpdater } from '../hooks/useBackendUpdater';
 import { useTunnelStatus } from '../hooks/useTunnelStatus';
 import { useConfig } from '../hooks/useConfig';
@@ -243,6 +243,10 @@ export function ConsolePanel() {
 
   return (
     <div className="flex w-full max-w-2xl flex-col gap-3 rounded-2xl bg-velo-surface p-4">
+      <div className="flex items-center gap-2 border-b border-velo-background pb-3">
+        <Terminal size={16} className="text-velo-indigo" />
+        <h2 className="text-sm font-medium text-velo-text-primary">Console</h2>
+      </div>
       <ConsoleTabBar tabs={tabs} activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'app' && <DevLogList />}
       {activeTab === 'backend' && <BackendConsoleTab />}
