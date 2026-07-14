@@ -28,6 +28,7 @@
     "verify:backend": "bun run typecheck:server",
     "verify:web": "bun run typecheck:web",
 
+    "sync:version": "bun scripts/sync-version.ts",
     "release:app": "bun run install:all && bun run verify:app && bun scripts/release.ts",
     "release:backend": "bun run install:server && bun run verify:backend && bun scripts/release.ts --backend",
     "release:web": "bun run install:web && bun run verify:web && bun scripts/release.ts --web",
