@@ -126,6 +126,25 @@ fn kill_running_backend(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn kill_orphaned_backend_processes_by_name() {
+    let result = std::process::Command::new("taskkill")
+        .args(["/IM", BACKEND_BINARY_FILENAME, "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            println!("{}", LogMessage::BackendOrphanKillSucceeded.text());
+        }
+        Ok(_) => {
+            println!("{}", LogMessage::BackendOrphanKillNoneFound.text());
+        }
+        Err(error) => {
+            println!("{}", LogMessage::BackendOrphanKillFailed(error.to_string()).text());
+        }
+    }
+}
+
 fn is_backend_installed(app: &AppHandle) -> bool {
     resolve_writable_backend_path(app)
         .map(|path| path.exists())
@@ -284,6 +303,12 @@ fn rename_with_retry(temp_path: &PathBuf, writable_path: &PathBuf) -> Result<(),
 }
 
 fn replace_backend_binary_on_disk(writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
+    let parent = writable_path
+        .parent()
+        .ok_or_else(|| LogMessage::BackendDataDirResolveFailed.text())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
+
     let temp_path = writable_path.with_extension("exe.new");
     std::fs::write(&temp_path, new_binary)
         .map_err(|error| LogMessage::BackendReplaceFailed(error.to_string()).text())?;
@@ -298,6 +323,7 @@ pub async fn install_backend_update(app: AppHandle) -> Result<BackendStatus, Str
     let new_binary = download_backend_binary(&download_url).await?;
 
     kill_running_backend(&app)?;
+    kill_orphaned_backend_processes_by_name();
 
     let writable_path = resolve_writable_backend_path(&app)?;
     replace_backend_binary_on_disk(&writable_path, &new_binary)?;

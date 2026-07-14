@@ -35,6 +35,9 @@ pub enum LogMessage {
     BackendVersionFetchAttempt(String),
     BackendVersionFetchResult(String, String),
     BackendVersionFetchUnreachable(String),
+    BackendOrphanKillSucceeded,
+    BackendOrphanKillNoneFound,
+    BackendOrphanKillFailed(String),
     TunnelSpawnFailed(String),
     TunnelSpawned,
     TunnelKillFailed,
@@ -159,6 +162,15 @@ impl LogMessage {
             }
             LogMessage::BackendVersionFetchUnreachable(url) => {
                 format!("[BACKEND_MANAGER] {url} did not respond, backend may still be starting or is not running")
+            }
+            LogMessage::BackendOrphanKillSucceeded => {
+                "[BACKEND_MANAGER] taskkill found and terminated a running backend sidecar not tracked by this app instance".to_string()
+            }
+            LogMessage::BackendOrphanKillNoneFound => {
+                "[BACKEND_MANAGER] taskkill found no running backend sidecar process to terminate".to_string()
+            }
+            LogMessage::BackendOrphanKillFailed(reason) => {
+                format!("[BACKEND_MANAGER] Failed to run taskkill against the backend sidecar: {reason}")
             }
             LogMessage::TunnelSpawnFailed(reason) => {
                 format!("[TUNNEL_MANAGER] Failed to spawn cloudflared: {reason}")
