@@ -99,6 +99,7 @@ pub fn spawn_backend(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| LogMessage::BackendSpawnFailed(error.to_string()).text())?;
 
     println!("{}", LogMessage::BackendSpawned(writable_path.display().to_string()).text());
+    println!("{}", LogMessage::BackendSpawnedWithPid(child.id()).text());
     app.state::<BackendState>().0.lock().unwrap().replace(child);
     Ok(())
 }
@@ -115,8 +116,11 @@ fn kill_running_backend(app: &AppHandle) -> Result<(), String> {
     let Some(mut child) = guard.take() else {
         return Ok(());
     };
+    let pid = child.id();
+    println!("{}", LogMessage::BackendKillAttempt(pid).text());
     child.kill().map_err(|_| LogMessage::BackendKillFailed.text())?;
     child.wait().map_err(|_| LogMessage::BackendKillFailed.text())?;
+    println!("{}", LogMessage::BackendKillSucceeded(pid).text());
     Ok(())
 }
 
@@ -148,8 +152,18 @@ fn resolve_releases_repo(app: &AppHandle) -> Result<String, String> {
 
 async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
     let url = resolve_local_version_url(app).ok()?;
-    let response = reqwest::get(url).await.ok()?;
-    let parsed = response.json::<LocalVersionResponse>().await.ok()?;
+    println!("{}", LogMessage::BackendVersionFetchAttempt(url.clone()).text());
+
+    let Ok(response) = reqwest::get(&url).await else {
+        println!("{}", LogMessage::BackendVersionFetchUnreachable(url).text());
+        return None;
+    };
+    let Ok(parsed) = response.json::<LocalVersionResponse>().await else {
+        println!("{}", LogMessage::BackendVersionFetchUnreachable(url).text());
+        return None;
+    };
+
+    println!("{}", LogMessage::BackendVersionFetchResult(url, parsed.version.clone()).text());
     Some(parsed.version)
 }
 

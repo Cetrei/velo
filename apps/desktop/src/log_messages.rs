@@ -28,6 +28,12 @@ pub enum LogMessage {
     BackendUninstallFailed(String),
     BackendUninstalled,
     BackendStartupSkippedDisabled,
+    BackendKillAttempt(u32),
+    BackendKillSucceeded(u32),
+    BackendSpawnedWithPid(u32),
+    BackendVersionFetchAttempt(String),
+    BackendVersionFetchResult(String, String),
+    BackendVersionFetchUnreachable(String),
     TunnelSpawnFailed(String),
     TunnelSpawned,
     TunnelKillFailed,
@@ -131,6 +137,24 @@ impl LogMessage {
             }
             LogMessage::BackendStartupSkippedDisabled => {
                 "[BACKEND_MANAGER] Backend autostart skipped, disabled in user.yml (backend.enabled = false)".to_string()
+            }
+            LogMessage::BackendKillAttempt(pid) => {
+                format!("[BACKEND_MANAGER] Killing running backend sidecar, pid={pid}")
+            }
+            LogMessage::BackendKillSucceeded(pid) => {
+                format!("[BACKEND_MANAGER] Backend sidecar pid={pid} confirmed exited")
+            }
+            LogMessage::BackendSpawnedWithPid(pid) => {
+                format!("[BACKEND_MANAGER] New backend sidecar process started, pid={pid}")
+            }
+            LogMessage::BackendVersionFetchAttempt(url) => {
+                format!("[BACKEND_MANAGER] Fetching running backend version from {url}")
+            }
+            LogMessage::BackendVersionFetchResult(url, version) => {
+                format!("[BACKEND_MANAGER] {url} responded with version={version}")
+            }
+            LogMessage::BackendVersionFetchUnreachable(url) => {
+                format!("[BACKEND_MANAGER] {url} did not respond, backend may still be starting or is not running")
             }
             LogMessage::TunnelSpawnFailed(reason) => {
                 format!("[TUNNEL_MANAGER] Failed to spawn cloudflared: {reason}")
