@@ -1,22 +1,33 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+mod core_loader;
+mod core_manager;
+mod driver_watchdog;
 mod log_messages;
+mod manifest;
+mod module_manager;
 mod server_manager;
 mod tray;
 mod tunnel_manager;
 mod update_progress;
 
 use log_messages::LogMessage;
-use server_manager::{ServerState, ServerUpdateCancellation};
-use std::sync::Mutex;
+use module_manager::ModuleRegistry;
 use std::time::Duration;
 use tauri::{Manager, WindowEvent};
-use tunnel_manager::TunnelState;
 
 #[tauri::command]
 fn push_frame(bytes: Vec<u8>, width: u32, height: u32) -> Result<(), String> {
-    vcam_driver::write_frame_buffer(&bytes, width, height)
+    if !driver_watchdog::is_registered() {
+        return Err(LogMessage::DriverNotRegistered(driver_watchdog::configured_clsid()).text());
+    }
+    core_loader::write_frame(&bytes, width, height)
+}
+
+#[tauri::command]
+fn get_driver_status() -> driver_watchdog::DriverStatus {
+    driver_watchdog::status()
 }
 
 #[tauri::command]
@@ -128,9 +139,19 @@ fn spawn_backend_on_setup(app: &tauri::AppHandle) {
         println!("{}", LogMessage::ServerStartupSkippedDisabled.text());
         return;
     }
-    if let Err(error) = server_manager::spawn_backend(app) {
-        eprintln!("{error}");
-    }
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = server_manager::ensure_backend_installed_and_spawn(&app_handle).await {
+            eprintln!("{error}");
+        }
+    });
+}
+
+fn ensure_core_on_setup(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        core_manager::ensure_core_installed_and_loaded(&app_handle).await;
+    });
 }
 
 fn stop_all_managed_processes(app: &tauri::AppHandle) {
@@ -145,11 +166,10 @@ fn main() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(ServerState(Mutex::new(None)))
-        .manage(ServerUpdateCancellation(Mutex::new(None)))
-        .manage(TunnelState(Mutex::new(None)))
+        .manage(ModuleRegistry::new())
         .invoke_handler(tauri::generate_handler![
             push_frame,
+            get_driver_status,
             get_system_config,
             get_user_config,
             save_user_config,
@@ -166,11 +186,14 @@ fn main() {
             tunnel_manager::get_tunnel_status,
             tunnel_manager::check_tunnel_update,
             tunnel_manager::restart_managed_tunnel,
-            tunnel_manager::stop_managed_tunnel
+            tunnel_manager::stop_managed_tunnel,
+            core_manager::get_core_status
         ])
         .setup(|app| {
             create_main_window(app.handle())?;
             tray::create_tray(app.handle())?;
+            ensure_core_on_setup(app.handle());
+            driver_watchdog::start(app.handle());
             spawn_backend_on_setup(app.handle());
             tunnel_manager::sync_tunnel_with_config(app.handle());
             Ok(())

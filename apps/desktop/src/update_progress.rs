@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
-pub const SERVER_UPDATE_PROGRESS_EVENT: &str = "server-update-progress";
 pub const TUNNEL_UPDATE_PROGRESS_EVENT: &str = "tunnel-update-progress";
 
 const PROGRESS_EMIT_INTERVAL_MS: u128 = 150;
@@ -19,6 +18,14 @@ const REQUEST_TIMEOUT_SECS: u64 = 15;
 pub enum UpdateProgress {
     CheckingRelease,
     Downloading { received_bytes: u64, total_bytes: Option<u64>, bytes_per_sec: u64 },
+    // TODO-ARCH: the frontend (useUpdateProgress.ts) already renders a
+    // 'paused' phase, but nothing on the Rust side ever emits it: there is
+    // no pause button, and download_with_progress_inner only resumes
+    // automatically on a fresh retry after a failure, never pauses on
+    // purpose mid-transfer. Whether to build an explicit pause/resume
+    // affordance is a product decision for the Architect, not something to
+    // wire in silently here. Kept as dead code with this note until then.
+    #[allow(dead_code)]
     Paused { received_bytes: u64, total_bytes: Option<u64> },
     Verifying,
     BackingUp,

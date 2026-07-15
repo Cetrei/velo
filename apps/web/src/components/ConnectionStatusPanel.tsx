@@ -12,6 +12,7 @@ interface ConnectionStatusPanelProps {
   stageDetail?: string;
   remotePeer: RemotePeerInfo | null;
   onDisconnect: () => void;
+  driverReconnecting?: boolean;
 }
 
 const STAGE_MESSAGES: Record<WebRtcStage, string> = {
@@ -59,7 +60,7 @@ function DevicePairingRow({ remotePeer }: { remotePeer: RemotePeerInfo }) {
   );
 }
 
-export function ConnectionStatusPanel({ connectionState, stage, stageDetail, remotePeer, onDisconnect }: ConnectionStatusPanelProps) {
+export function ConnectionStatusPanel({ connectionState, stage, stageDetail, remotePeer, onDisconnect, driverReconnecting }: ConnectionStatusPanelProps) {
   const isConnected = connectionState === 'connected' && remotePeer !== null;
   const isFailed = connectionState === 'failed';
 
@@ -78,6 +79,12 @@ export function ConnectionStatusPanel({ connectionState, stage, stageDetail, rem
       </div>
       {shouldShowDevicePairing(stage, remotePeer) && <DevicePairingRow remotePeer={remotePeer as RemotePeerInfo} />}
       {isFailed && stageDetail && <span className="text-xs text-velo-coral">{stageDetail}</span>}
+      {isConnected && driverReconnecting && (
+        <div className="flex items-center gap-2 text-xs text-velo-coral">
+          <span className="h-1.5 w-1.5 rounded-full bg-velo-coral animate-pulse" />
+          <span>Reconnecting to the virtual camera driver, retrying automatically…</span>
+        </div>
+      )}
     </div>
   );
 }

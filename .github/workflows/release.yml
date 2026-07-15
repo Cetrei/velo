@@ -4,7 +4,8 @@ on:
   push:
     tags:
       - "v*"
-      - "backend-v*"
+      - "server-v*"
+      - "core-v*"
   workflow_dispatch: {}
 
 permissions:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   desktop:
-    if: ${{ !startsWith(github.ref_name, 'backend-v') }}
+    if: ${{ !startsWith(github.ref_name, 'server-v') && !startsWith(github.ref_name, 'core-v') }}
     runs-on: windows-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -80,12 +81,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-server-
 
-      - name: Compile backend binary for the desktop sidecar
-        run: bun run build:server
-
-      - name: Prepare backend sidecar for Tauri bundling
-        run: bun scripts/prepare-backend-sidecar.mjs
-
       - name: Build and sign desktop app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -99,8 +94,23 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Velo ${{ github.ref_name }}"
 
+      - name: Sign the Velo-Manager module manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bunx tauri signer sign -k "$env:TAURI_SIGNING_PRIVATE_KEY" -p "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD" config/manifest.json
+
+      - name: Publish the manifest as a release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          files: |
+            config/manifest.json
+            config/manifest.json.sig
+
   android:
-    if: ${{ !startsWith(github.ref_name, 'backend-v') }}
+    if: ${{ !startsWith(github.ref_name, 'server-v') && !startsWith(github.ref_name, 'core-v') }}
     runs-on: ubuntu-latest
     env:
       VELO_ANDROID_KEYSTORE_BASE64: ${{ secrets.VELO_ANDROID_KEYSTORE_BASE64 }}
@@ -167,7 +177,7 @@ jobs:
           files: bin/android/*.apk
 
   backend:
-    if: ${{ startsWith(github.ref_name, 'backend-v') }}
+    if: ${{ startsWith(github.ref_name, 'server-v') }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -190,7 +200,7 @@ jobs:
         run: bun install
 
       - name: Sync backend version from tag
-        if: ${{ startsWith(github.ref_name, 'backend-v') }}
+        if: ${{ startsWith(github.ref_name, 'server-v') }}
         run: bun run sync:version ${{ github.ref_name }}
 
       - name: Cache server Bun dependencies
@@ -214,9 +224,52 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: bin/backend/*.exe
 
+  core:
+    if: ${{ startsWith(github.ref_name, 'core-v') }}
+    runs-on: windows-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Build Velo-Core cdylib
+        run: cargo build --release --manifest-path crates/vcam-driver/Cargo.toml
+
+      - name: Collect Velo-Core artifact
+        run: bun scripts/collect-core-artifact.mjs
+
+      - name: Publish core release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          make_latest: "false"
+          tag_name: ${{ github.ref_name }}
+          files: bin/core/*.dll
+
   publish-app-release:
     needs: [desktop, android]
-    if: ${{ success() && !startsWith(github.ref_name, 'backend-v') }}
+    if: ${{ success() && !startsWith(github.ref_name, 'server-v') && !startsWith(github.ref_name, 'core-v') }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish the draft release so auto-updaters can find it
@@ -226,10 +279,20 @@ jobs:
 
   publish-backend-release:
     needs: [backend]
-    if: ${{ success() && startsWith(github.ref_name, 'backend-v') }}
+    if: ${{ success() && startsWith(github.ref_name, 'server-v') }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish the draft release so the Backend updater can find it
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit ${{ github.ref_name }} --draft=false --latest=false --repo ${{ github.repository }}
+
+  publish-core-release:
+    needs: [core]
+    if: ${{ success() && startsWith(github.ref_name, 'core-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release so Velo-Core's loader can find it
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit ${{ github.ref_name }} --draft=false --latest=false --repo ${{ github.repository }}

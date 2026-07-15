@@ -47,15 +47,14 @@ fn write_chroma_plane(rgba: &[u8], width: usize, height: usize, nv12: &mut [u8],
     }
 }
 
-pub fn convert_rgba_to_nv12(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+pub fn convert_rgba_to_nv12(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, LogMessage> {
     let width = width as usize;
     let height = height as usize;
 
     if width % 2 != 0 || height % 2 != 0 {
         return Err(LogMessage::Nv12ConversionFailed(
             "width and height must be even for 4:2:0 chroma subsampling".to_string(),
-        )
-        .text());
+        ));
     }
 
     let luma_size = width * height;

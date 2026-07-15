@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "server",
+      "strategy": "process",
+      "release_repo": "",
+      "tag_prefix": "server-v",
+      "binary_asset_name": "velo-backend.exe",
+      "health_check": { "kind": "http", "local_version_path": "network.signaling_port" },
+      "data_subdir": "backend"
+    },
+    {
+      "id": "tunnel",
+      "strategy": "process",
+      "release_repo": "cloudflare/cloudflared",
+      "tag_prefix": "",
+      "binary_asset_name": "cloudflared-windows-amd64.exe",
+      "health_check": { "kind": "none" },
+      "data_subdir": "cloudflared"
+    },
+    {
+      "id": "core",
+      "strategy": "dylib",
+      "release_repo": "",
+      "tag_prefix": "core-v",
+      "binary_asset_name": "velo_core.dll",
+      "health_check": { "kind": "none" },
+      "data_subdir": "core"
+    }
+  ]
+}

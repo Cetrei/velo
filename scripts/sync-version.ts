@@ -5,7 +5,7 @@ const TAURI_CONF_PATH = join('apps', 'desktop', 'tauri.conf.json');
 const ANDROID_VARIABLES_PATH = join('apps', 'web', 'android', 'variables.gradle');
 const SERVER_PACKAGE_JSON_PATH = join('apps', 'server', 'package.json');
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
-const BACKEND_VERSION_TAG_PATTERN = /^backend-v(\d+)\.(\d+)\.(\d+)$/;
+const SERVER_VERSION_TAG_PATTERN = /^server-v(\d+)\.(\d+)\.(\d+)$/;
 
 type SemVer = { major: number; minor: number; patch: number };
 
@@ -19,18 +19,18 @@ function parseVersionTag(tag: string): SemVer {
   return { major: Number(major), minor: Number(minor), patch: Number(patch) };
 }
 
-function parseBackendVersionTag(tag: string): SemVer {
-  const match = tag.match(BACKEND_VERSION_TAG_PATTERN);
+function parseServerVersionTag(tag: string): SemVer {
+  const match = tag.match(SERVER_VERSION_TAG_PATTERN);
   if (!match) {
-    console.error(`[SYNC-VERSION] Tag "${tag}" does not match backend-vX.Y.Z (e.g. backend-v1.4.2)`);
+    console.error(`[SYNC-VERSION] Tag "${tag}" does not match server-vX.Y.Z (e.g. server-v1.4.2)`);
     process.exit(1);
   }
   const [, major, minor, patch] = match;
   return { major: Number(major), minor: Number(minor), patch: Number(patch) };
 }
 
-function isBackendTag(tag: string): boolean {
-  return tag.startsWith('backend-v');
+function isServerTag(tag: string): boolean {
+  return tag.startsWith('server-v');
 }
 
 function toVersionName(version: SemVer): string {
@@ -133,8 +133,8 @@ function resolveTag(): string {
   process.exit(1);
 }
 
-function syncBackendVersion(tag: string): void {
-  const version = parseBackendVersionTag(tag);
+function syncServerVersion(tag: string): void {
+  const version = parseServerVersionTag(tag);
   updateServerPackageJson(toVersionName(version));
 }
 
@@ -149,8 +149,8 @@ function syncAppVersion(tag: string): void {
 
 function main(): void {
   const tag = resolveTag();
-  if (isBackendTag(tag)) {
-    syncBackendVersion(tag);
+  if (isServerTag(tag)) {
+    syncServerVersion(tag);
     return;
   }
   syncAppVersion(tag);

@@ -2,12 +2,13 @@ import { useRef, useState } from 'react';
 import { Copy, Check, Play, Square, RotateCw, Loader2, Terminal, FolderInput } from 'lucide-react';
 import { useServerUpdater } from '../hooks/useServerUpdater';
 import { useTunnelStatus } from '../hooks/useTunnelStatus';
+import { useCoreStatus } from '../hooks/useCoreStatus';
 import { useConfig } from '../hooks/useConfig';
 import { getClientEnvironment } from '../lib/environment';
 import { describeProgressPhase, progressPhaseFraction, type UpdateProgressEvent } from '../hooks/useUpdateProgress';
 import { DevLogList } from './DevLogList';
 
-type ConsoleTabId = 'app' | 'server' | 'tunnel';
+type ConsoleTabId = 'app' | 'server' | 'tunnel' | 'core';
 
 function useCopyToClipboard(): [boolean, (text: string) => void] {
   const [didCopy, setDidCopy] = useState(false);
@@ -255,8 +256,23 @@ function TunnelConsoleTab() {
   );
 }
 
+function CoreConsoleTab() {
+  const { status, error } = useCoreStatus();
+  const text = status
+    ? `loaded=${status.running} installed=${status.installed} version=${status.version ?? 'n/a'}`
+    : error ?? 'Reading Velo-Core status\u2026';
+
+  return (
+    <StatusBlock
+      title="Velo-Core status"
+      text={text}
+      note="Read-only. Velo-Core installs and updates itself automatically on every app startup, there is nothing to start, stop, or update manually here."
+    />
+  );
+}
+
 function resolveTabs(environment: ReturnType<typeof getClientEnvironment>): ConsoleTabId[] {
-  if (environment === 'DESKTOP_VIEWER') return ['app', 'server', 'tunnel'];
+  if (environment === 'DESKTOP_VIEWER') return ['app', 'server', 'tunnel', 'core'];
   return ['app'];
 }
 
@@ -295,6 +311,7 @@ export function ConsolePanel() {
       {activeTab === 'app' && <DevLogList />}
       {activeTab === 'server' && <ServerConsoleTab />}
       {activeTab === 'tunnel' && <TunnelConsoleTab />}
+      {activeTab === 'core' && <CoreConsoleTab />}
     </div>
   );
 }

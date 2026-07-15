@@ -69,6 +69,10 @@ function toVeloRelease(raw: GithubRelease): VeloRelease {
   };
 }
 
+function isAppRelease(tagName: string): boolean {
+  return !tagName.startsWith('server-v') && !tagName.startsWith('backend-v');
+}
+
 export async function fetchPublishedReleases(repo: string): Promise<VeloRelease[]> {
   const response = await fetch(`${buildReleasesApiUrl(repo)}?per_page=100`, {
     headers: { Accept: 'application/vnd.github+json' },
@@ -78,7 +82,7 @@ export async function fetchPublishedReleases(repo: string): Promise<VeloRelease[
   }
   const raw = (await response.json()) as GithubRelease[];
   return raw
-    .filter((release) => !release.draft && !release.prerelease)
+    .filter((release) => !release.draft && !release.prerelease && isAppRelease(release.tag_name))
     .map(toVeloRelease)
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 }

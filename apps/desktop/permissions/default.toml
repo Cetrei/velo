@@ -83,6 +83,16 @@ identifier = "allow-restart-managed-tunnel"
 description = "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings."
 commands.allow = ["restart_managed_tunnel"]
 
+[[permission]]
+identifier = "allow-get-driver-status"
+description = "Allows reading whether the virtual camera DirectShow filter is currently registered in the Windows registry."
+commands.allow = ["get_driver_status"]
+
+[[permission]]
+identifier = "allow-get-core-status"
+description = "Allows reading Velo-Core's currently loaded version and ABI health, read-only, since Core updates itself automatically on startup."
+commands.allow = ["get_core_status"]
+
 [[set]]
 identifier = "default"
 description = "Default permission set granting access to all of Velo's own app-level commands."
@@ -104,4 +114,6 @@ permissions = [
   "allow-get-tunnel-status",
   "allow-check-tunnel-update",
   "allow-restart-managed-tunnel",
+  "allow-get-driver-status",
+  "allow-get-core-status",
 ]

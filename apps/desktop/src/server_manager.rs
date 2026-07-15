@@ -1,593 +1,103 @@
 use crate::log_messages::LogMessage;
-use crate::update_progress::{
-    download_with_progress, emit_progress, request_timeout, CancellationToken, DownloadError, UpdateProgress, SERVER_UPDATE_PROGRESS_EVENT,
-};
-use serde::{Deserialize, Serialize};
-use std::os::windows::process::CommandExt;
-use std::path::PathBuf;
-use std::process::Child;
-use std::sync::Mutex;
-use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use crate::manifest;
+use crate::module_manager::{self, Module, ModuleStatus, ModuleUpdateInfo};
+use tauri::AppHandle;
 
-const BACKEND_BINARY_FILENAME: &str = "velo-backend.exe";
-const BACKEND_BACKUP_FILENAME: &str = "velo-backend.exe.backup";
-const BACKEND_PARTIAL_FILENAME: &str = "velo-backend.exe.partial";
-const GITHUB_API_ACCEPT_HEADER: &str = "application/vnd.github+json";
-const GITHUB_USER_AGENT: &str = "velo-desktop-backend-manager";
-const BACKEND_TAG_PREFIX: &str = "backend-v";
-const CREATE_NO_WINDOW: u32 = 0x08000000;
-const BACKEND_REPLACE_MAX_ATTEMPTS: u32 = 5;
-const BACKEND_REPLACE_RETRY_BASE_DELAY_MS: u64 = 200;
-const BACKEND_POST_INSTALL_HEALTHCHECK_ATTEMPTS: u32 = 10;
-const BACKEND_POST_INSTALL_HEALTHCHECK_DELAY_MS: u64 = 300;
+const SERVER_MODULE_ID: &str = "server";
 
-pub struct ServerState(pub Mutex<Option<Child>>);
-pub struct ServerUpdateCancellation(pub Mutex<Option<CancellationToken>>);
-
-#[derive(Serialize)]
-pub struct ServerStatus {
-    running: bool,
-    installed: bool,
-    version: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct ServerUpdateInfo {
-    available: bool,
-    current_version: Option<String>,
-    latest_version: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct LocalVersionResponse {
-    version: String,
-}
-
-#[derive(Deserialize)]
-struct GithubReleaseAsset {
-    name: String,
-    browser_download_url: String,
-}
-
-#[derive(Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-    draft: bool,
-    prerelease: bool,
-    assets: Vec<GithubReleaseAsset>,
-}
-
-fn resolve_backend_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| LogMessage::ServerDataDirResolveFailed.text())?;
-    Ok(data_dir.join("backend"))
-}
-
-fn resolve_writable_backend_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_backend_dir(app)?.join(BACKEND_BINARY_FILENAME))
-}
-
-fn resolve_backup_backend_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_backend_dir(app)?.join(BACKEND_BACKUP_FILENAME))
-}
-
-fn resolve_partial_download_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_backend_dir(app)?.join(BACKEND_PARTIAL_FILENAME))
-}
-
-fn resolve_bundled_sidecar_path() -> Result<PathBuf, String> {
-    let executable_path = std::env::current_exe()
-        .map_err(|_| LogMessage::ServerSeedFailed("could not resolve current executable path".to_string()).text())?;
-    let install_dir = executable_path
-        .parent()
-        .ok_or_else(|| LogMessage::ServerSeedFailed("could not resolve install directory".to_string()).text())?;
-    Ok(install_dir.join(BACKEND_BINARY_FILENAME))
-}
-
-fn seed_backend_binary_if_missing(_app: &AppHandle, writable_path: &PathBuf) -> Result<(), String> {
-    if writable_path.exists() {
-        return Ok(());
-    }
-
-    let parent = writable_path
-        .parent()
-        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|_| LogMessage::ServerSeedFailed(writable_path.display().to_string()).text())?;
-
-    let bundled_sidecar = resolve_bundled_sidecar_path()?;
-    std::fs::copy(&bundled_sidecar, writable_path)
-        .map_err(|_| LogMessage::ServerSeedFailed(writable_path.display().to_string()).text())?;
-    Ok(())
-}
-
-fn resolve_bundled_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .resolve("config", tauri::path::BaseDirectory::Resource)
-        .map_err(|_| LogMessage::ServerSpawnFailed("could not resolve bundled config directory".to_string()).text())
-}
-
-pub fn spawn_backend(app: &AppHandle) -> Result<(), String> {
-    let writable_path = resolve_writable_backend_path(app)?;
-    seed_backend_binary_if_missing(app, &writable_path)?;
-    let config_dir = resolve_bundled_config_dir(app)?;
-
-    let child = std::process::Command::new(&writable_path)
-        .env("VELO_CONFIG_DIR", config_dir)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|error| LogMessage::ServerSpawnFailed(error.to_string()).text())?;
-
-    println!("{}", LogMessage::ServerSpawned(writable_path.display().to_string()).text());
-    println!("{}", LogMessage::ServerSpawnedWithPid(child.id()).text());
-    app.state::<ServerState>().0.lock().unwrap().replace(child);
-    Ok(())
-}
-
-pub fn stop_backend_before_exit(app: &AppHandle) {
-    if let Some(mut child) = app.state::<ServerState>().0.lock().unwrap().take() {
-        let _ = child.kill();
-    }
-}
-
-fn kill_running_backend(app: &AppHandle) -> Result<(), String> {
-    let state = app.state::<ServerState>();
-    let mut guard = state.0.lock().unwrap();
-    let Some(mut child) = guard.take() else {
-        return Ok(());
-    };
-    let pid = child.id();
-    println!("{}", LogMessage::ServerKillAttempt(pid).text());
-    child.kill().map_err(|_| LogMessage::ServerKillFailed.text())?;
-    child.wait().map_err(|_| LogMessage::ServerKillFailed.text())?;
-    println!("{}", LogMessage::ServerKillSucceeded(pid).text());
-    Ok(())
-}
-
-fn kill_orphaned_backend_processes_by_name() {
-    let result = std::process::Command::new("taskkill")
-        .args(["/IM", BACKEND_BINARY_FILENAME, "/F"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    match result {
-        Ok(output) if output.status.success() => {
-            println!("{}", LogMessage::ServerOrphanKillSucceeded.text());
-        }
-        Ok(_) => {
-            println!("{}", LogMessage::ServerOrphanKillNoneFound.text());
-        }
-        Err(error) => {
-            println!("{}", LogMessage::ServerOrphanKillFailed(error.to_string()).text());
-        }
-    }
-}
-
-fn is_backend_installed(app: &AppHandle) -> bool {
-    resolve_writable_backend_path(app)
-        .map(|path| path.exists())
-        .unwrap_or(false)
-}
-
-fn resolve_local_version_url(app: &AppHandle) -> Result<String, String> {
-    let system_config = crate::config::get_system_config(app)?;
-    let port = system_config
-        .get("network")
-        .and_then(|network| network.get("signaling_port"))
-        .and_then(|value| value.as_u64())
-        .ok_or_else(|| LogMessage::ServerVersionCheckFailed("network.signaling_port missing from system.yml".to_string()).text())?;
-    Ok(format!("http://127.0.0.1:{port}/version"))
-}
-
-fn resolve_releases_repo(app: &AppHandle) -> Result<String, String> {
-    let system_config = crate::config::get_system_config(app)?;
-    system_config
-        .get("releases")
-        .and_then(|releases| releases.get("repo"))
-        .and_then(|value| value.as_str())
-        .map(|repo| repo.to_string())
-        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed("releases.repo missing from system.yml".to_string()).text())
-}
-
-async fn fetch_running_backend_version(app: &AppHandle) -> Option<String> {
-    let url = match resolve_local_version_url(app) {
-        Ok(url) => url,
-        Err(reason) => {
-            println!("{}", LogMessage::ServerVersionUrlUnresolved(reason).text());
-            return None;
-        }
-    };
-    println!("{}", LogMessage::ServerVersionFetchAttempt(url.clone()).text());
-
-    let client = match reqwest::Client::builder().timeout(request_timeout()).build() {
-        Ok(client) => client,
-        Err(error) => {
-            println!("{}", LogMessage::ServerVersionHttpClientBuildFailed(error.to_string()).text());
-            return None;
-        }
-    };
-
-    let response = match client.get(&url).send().await {
-        Ok(response) => response,
-        Err(error) => {
-            println!("{}", LogMessage::ServerVersionFetchUnreachable(format!("{url} ({error})")).text());
-            return None;
-        }
-    };
-
-    if !response.status().is_success() {
-        println!("{}", LogMessage::ServerVersionNonSuccessStatus(url, response.status().to_string()).text());
-        return None;
-    }
-
-    let raw_body = match response.text().await {
-        Ok(body) => body,
-        Err(error) => {
-            println!("{}", LogMessage::ServerVersionBodyUnreadable(url, error.to_string()).text());
-            return None;
-        }
-    };
-
-    let parsed: LocalVersionResponse = match serde_json::from_str(&raw_body) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            println!("{}", LogMessage::ServerVersionUnexpectedShape(url, error.to_string(), raw_body).text());
-            return None;
-        }
-    };
-
-    if parsed.version == "0.0.0-dev" {
-        println!("{}", LogMessage::ServerVersionIsDevFallback(url.clone()).text());
-    }
-
-    println!("{}", LogMessage::ServerVersionFetchResult(url, parsed.version.clone()).text());
-    Some(parsed.version)
-}
-
-async fn wait_for_backend_healthy(app: &AppHandle) -> bool {
-    for _ in 0..BACKEND_POST_INSTALL_HEALTHCHECK_ATTEMPTS {
-        if fetch_running_backend_version(app).await.is_some() {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(BACKEND_POST_INSTALL_HEALTHCHECK_DELAY_MS)).await;
-    }
-    false
-}
-
-fn is_windows_backend_asset(name: &str) -> bool {
-    name.eq_ignore_ascii_case(BACKEND_BINARY_FILENAME)
-}
-
-async fn fetch_latest_backend_release(app: &AppHandle) -> Result<GithubRelease, String> {
-    let repo = resolve_releases_repo(app)?;
-    let releases_url = format!("https://api.github.com/repos/{repo}/releases");
-
-    let client = reqwest::Client::builder()
-        .timeout(request_timeout())
-        .build()
-        .map_err(|error| LogMessage::ServerReleaseFetchFailed(format!("failed to build HTTP client: {error}")).text())?;
-    let response = client
-        .get(&releases_url)
-        .header("Accept", GITHUB_API_ACCEPT_HEADER)
-        .header("User-Agent", GITHUB_USER_AGENT)
-        .send()
-        .await
-        .map_err(|error| LogMessage::ServerReleaseFetchFailed(error.to_string()).text())?;
-
-    if !response.status().is_success() {
-        return Err(LogMessage::ServerReleaseFetchFailed(format!(
-            "{releases_url} responded with HTTP {}",
-            response.status()
-        ))
-        .text());
-    }
-
-    let releases: Vec<GithubRelease> = response
-        .json()
-        .await
-        .map_err(|error| LogMessage::ServerReleaseFetchFailed(error.to_string()).text())?;
-
-    releases
+/// Resolves this module's static description from the signed manifest
+/// (`manifest::fetch_and_verify_modules`, itself falling back to the last
+/// verified manifest cached on disk if the network fetch fails) instead of
+/// a hardcoded constant, per Phase 3's goal of policy (which modules exist,
+/// where their releases live) living entirely outside shell code. If the
+/// manifest cannot be resolved at all (no network on a fresh install with
+/// no cache yet, or a genuinely missing entry), this fails outright rather
+/// than silently falling back to a hardcoded description, since that would
+/// reintroduce the exact duplication this phase exists to remove.
+async fn resolve_server_module(app: &AppHandle) -> Result<Module, String> {
+    let modules = manifest::fetch_and_verify_modules(app).await?;
+    modules
         .into_iter()
-        .find(|release| !release.draft && !release.prerelease && release.tag_name.starts_with(BACKEND_TAG_PREFIX))
-        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed("no published backend-v* release found".to_string()).text())
+        .find(|module| module.id == SERVER_MODULE_ID)
+        .ok_or_else(|| LogMessage::ModuleNotInManifest(SERVER_MODULE_ID.to_string()).text())
 }
 
-fn extract_backend_download_url(release: &GithubRelease) -> Result<String, String> {
-    release
-        .assets
-        .iter()
-        .find(|asset| is_windows_backend_asset(&asset.name))
-        .map(|asset| asset.browser_download_url.clone())
-        .ok_or_else(|| LogMessage::ServerReleaseFetchFailed(format!("release {} has no {} asset", release.tag_name, BACKEND_BINARY_FILENAME)).text())
+/// Entry point for anything that needs the backend running but cannot
+/// assume it is already installed: app startup, and the manual Start
+/// button if the user uninstalled or never had a first-run install
+/// succeed. Spawns directly when already installed; otherwise fetches and
+/// installs the latest server-v* release first.
+pub async fn ensure_backend_installed_and_spawn(app: &AppHandle) -> Result<(), String> {
+    let module = resolve_server_module(app).await?;
+    module_manager::ensure_module_installed_and_spawn(app, &module).await
 }
 
-fn tag_to_version_name(tag_name: &str) -> String {
-    tag_name.trim_start_matches(BACKEND_TAG_PREFIX).to_string()
-}
-
-#[tauri::command]
-pub async fn get_server_status(app: AppHandle) -> ServerStatus {
-    let version = fetch_running_backend_version(&app).await;
-    ServerStatus { running: version.is_some(), installed: is_backend_installed(&app), version }
-}
-
-#[tauri::command]
-pub fn start_server(app: AppHandle) -> Result<ServerStatus, String> {
-    spawn_backend(&app)?;
-    Ok(ServerStatus { running: true, installed: true, version: None })
+/// Takes only the module id, not the resolved `Module`, because this runs
+/// on the app-exit and tray-quit shutdown paths, which are synchronous and
+/// cannot afford to await a manifest fetch just to kill a process already
+/// tracked in `ModuleRegistry`.
+pub fn stop_backend_before_exit(app: &AppHandle) {
+    module_manager::stop_module_before_exit(app, SERVER_MODULE_ID);
 }
 
 #[tauri::command]
-pub fn restart_server(app: AppHandle) -> Result<ServerStatus, String> {
-    kill_running_backend(&app)?;
-    spawn_backend(&app)?;
-    Ok(ServerStatus { running: true, installed: true, version: None })
+pub async fn get_server_status(app: AppHandle) -> ModuleStatus {
+    let Ok(module) = resolve_server_module(&app).await else {
+        return ModuleStatus { running: false, installed: false, version: None };
+    };
+    module_manager::get_module_status(&app, &module).await
 }
 
 #[tauri::command]
-pub fn stop_server(app: AppHandle) -> Result<ServerStatus, String> {
-    kill_running_backend(&app)?;
-    Ok(ServerStatus { running: false, installed: is_backend_installed(&app), version: None })
-}
-
-const BACKEND_UNINSTALL_MAX_ATTEMPTS: u32 = 8;
-const BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS: u64 = 250;
-const BACKEND_UNINSTALL_INITIAL_DELAY_MS: u64 = 250;
-
-/// Retries removing the backend directory a few times before giving up.
-/// taskkill returns as soon as it requests process termination, not once
-/// Windows has actually released the file handle, so the binary can still
-/// be locked for a brief window immediately after the kill call returns.
-/// Windows also keeps a just-terminated .exe's image section cached by the
-/// memory manager for a short moment after exit, which alone can produce
-/// "Access is denied" on the very first delete attempt even though the
-/// process is already gone; the fixed initial delay below gives that cache
-/// a chance to clear before the first attempt instead of burning it as a
-/// wasted, near-instant failure.
-fn remove_backend_binary_and_directory(app: &AppHandle) -> Result<(), String> {
-    let writable_path = resolve_writable_backend_path(app)?;
-    if !writable_path.exists() {
-        return Ok(());
-    }
-    let backend_dir = writable_path
-        .parent()
-        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
-
-    std::thread::sleep(std::time::Duration::from_millis(BACKEND_UNINSTALL_INITIAL_DELAY_MS));
-
-    let mut last_error = String::new();
-    for attempt in 1..=BACKEND_UNINSTALL_MAX_ATTEMPTS {
-        match std::fs::remove_dir_all(backend_dir) {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                last_error = error.to_string();
-                println!("{}", LogMessage::ServerUninstallRetrying(attempt, last_error.clone()).text());
-                let delay = BACKEND_UNINSTALL_RETRY_BASE_DELAY_MS * attempt as u64;
-                std::thread::sleep(std::time::Duration::from_millis(delay));
-            }
-        }
-    }
-    Err(LogMessage::ServerUninstallFailed(last_error).text())
+pub async fn start_server(app: AppHandle) -> Result<ModuleStatus, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::ensure_module_installed_and_spawn(&app, &module).await?;
+    Ok(module_manager::get_module_status(&app, &module).await)
 }
 
 #[tauri::command]
-pub fn uninstall_server(app: AppHandle) -> Result<ServerStatus, String> {
-    kill_running_backend(&app)?;
-    kill_orphaned_backend_processes_by_name();
-    remove_backend_binary_and_directory(&app)?;
+pub async fn restart_server(app: AppHandle) -> Result<ModuleStatus, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::kill_running_module(&app, &module.id)?;
+    module_manager::ensure_module_installed_and_spawn(&app, &module).await?;
+    Ok(module_manager::get_module_status(&app, &module).await)
+}
+
+#[tauri::command]
+pub async fn stop_server(app: AppHandle) -> Result<ModuleStatus, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::kill_running_module(&app, &module.id)?;
+    Ok(ModuleStatus { running: false, installed: module_manager::is_module_installed(&app, &module), version: None })
+}
+
+#[tauri::command]
+pub async fn uninstall_server(app: AppHandle) -> Result<ModuleStatus, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::kill_running_module(&app, &module.id)?;
+    module_manager::kill_orphaned_module_processes_by_name(&module);
+    module_manager::remove_module_binary_and_directory(&app, &module)?;
     println!("{}", LogMessage::ServerUninstalled.text());
-    Ok(ServerStatus { running: false, installed: false, version: None })
+    Ok(ModuleStatus { running: false, installed: false, version: None })
 }
 
 #[tauri::command]
-pub async fn check_server_update(app: AppHandle) -> Result<ServerUpdateInfo, String> {
-    let current_version = fetch_running_backend_version(&app).await;
-    let release = fetch_latest_backend_release(&app).await?;
-    let latest_version = tag_to_version_name(&release.tag_name);
+pub async fn check_server_update(app: AppHandle) -> Result<ModuleUpdateInfo, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::check_module_update(&app, &module).await
+}
 
-    let available = match &current_version {
-        Some(current) => current != &latest_version,
-        None => true,
+#[tauri::command]
+pub async fn install_server_update(app: AppHandle) -> Result<ModuleStatus, String> {
+    let module = resolve_server_module(&app).await?;
+    module_manager::install_module_update(&app, &module).await
+}
+
+#[tauri::command]
+pub async fn cancel_server_update(app: AppHandle) {
+    let Ok(module) = resolve_server_module(&app).await else {
+        return;
     };
-
-    Ok(ServerUpdateInfo { available, current_version, latest_version: Some(latest_version) })
-}
-
-fn rename_with_retry(app: &AppHandle, temp_path: &PathBuf, destination_path: &PathBuf, progress_phase: UpdateProgress) -> Result<(), String> {
-    let mut last_error = String::new();
-    for attempt in 1..=BACKEND_REPLACE_MAX_ATTEMPTS {
-        match std::fs::rename(temp_path, destination_path) {
-            Ok(()) => return Ok(()),
-            Err(error) => {
-                last_error = error.to_string();
-                println!("{}", LogMessage::ServerReplaceRetrying(attempt, last_error.clone()).text());
-                emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, progress_phase.clone());
-                let delay = BACKEND_REPLACE_RETRY_BASE_DELAY_MS * attempt as u64;
-                std::thread::sleep(std::time::Duration::from_millis(delay));
-            }
-        }
-    }
-    Err(LogMessage::ServerReplaceFailed(last_error).text())
-}
-
-/// Moves the currently installed binary aside into a backup slot instead of
-/// deleting it. This is the safety net rollback relies on: nothing that
-/// currently works gets destroyed until the new binary has proven itself.
-fn backup_current_backend_binary(app: &AppHandle, writable_path: &PathBuf, backup_path: &PathBuf) -> Result<(), String> {
-    if !writable_path.exists() {
-        return Ok(());
-    }
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::BackingUp);
-    std::fs::rename(writable_path, backup_path).map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())
-}
-
-fn install_new_backend_binary(app: &AppHandle, writable_path: &PathBuf, new_binary: &[u8]) -> Result<(), String> {
-    let parent = writable_path
-        .parent()
-        .ok_or_else(|| LogMessage::ServerDataDirResolveFailed.text())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())?;
-
-    let temp_path = writable_path.with_extension("exe.new");
-    std::fs::write(&temp_path, new_binary)
-        .map_err(|error| LogMessage::ServerReplaceFailed(error.to_string()).text())?;
-
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::InstallingNew);
-    rename_with_retry(app, &temp_path, writable_path, UpdateProgress::InstallingNew)
-}
-
-/// Restores the backed-up previous binary and restarts it, used when the
-/// freshly installed binary fails to boot or fails its healthcheck. Backend
-/// updates must never leave the user without a working backend, so this is
-/// attempted even if the failure happened mid-installation.
-async fn rollback_to_previous_backend(app: &AppHandle, writable_path: &PathBuf, backup_path: &PathBuf, reason: String) -> String {
-    if !backup_path.exists() {
-        let message = format!("{reason} (no backup available to roll back to)");
-        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
-        return message;
-    }
-
-    std::fs::remove_file(writable_path).ok();
-    if let Err(rename_error) = rename_with_retry(app, backup_path, writable_path, UpdateProgress::BackingUp) {
-        let message = format!("{reason} (rollback also failed: {rename_error})");
-        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
-        return message;
-    }
-
-    if spawn_backend(app).is_ok() {
-        let message = format!("{reason} (rolled back to previous version)");
-        println!("{}", LogMessage::ServerUpdateRolledBack(reason.clone()).text());
-        emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::RolledBack { message: message.clone() });
-        return message;
-    }
-
-    let message = format!("{reason} (rolled back binary but failed to restart it)");
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: message.clone() });
-    message
-}
-
-fn take_or_create_cancellation_token(app: &AppHandle) -> CancellationToken {
-    let state = app.state::<ServerUpdateCancellation>();
-    let mut guard = state.0.lock().unwrap();
-    let token = CancellationToken::new();
-    guard.replace(token.clone());
-    token
-}
-
-fn clear_cancellation_token(app: &AppHandle) {
-    app.state::<ServerUpdateCancellation>().0.lock().unwrap().take();
-}
-
-#[tauri::command]
-pub fn cancel_server_update(app: AppHandle) {
-    let state = app.state::<ServerUpdateCancellation>();
-    let guard = state.0.lock().unwrap();
-    if let Some(token) = guard.as_ref() {
-        token.cancel();
-    }
-}
-
-fn fail_update(app: &AppHandle, error: String) -> String {
-    clear_cancellation_token(app);
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Failed { message: error.clone() });
-    error
-}
-
-const CANCELLED_ERROR: &str = "cancelled";
-
-/// Ends the update attempt after a cancellation. The `Cancelled` progress
-/// event was already emitted where the cancellation was detected, so this
-/// only clears the token and returns the sentinel error without emitting a
-/// second, contradictory `Failed` event on top of it.
-fn cancel_update(app: &AppHandle) -> String {
-    clear_cancellation_token(app);
-    CANCELLED_ERROR.to_string()
-}
-
-async fn download_new_backend_binary(
-    app: &AppHandle,
-    download_url: &str,
-    partial_path: &PathBuf,
-    cancellation: &CancellationToken,
-) -> Result<Vec<u8>, String> {
-    let bytes = download_with_progress(app, SERVER_UPDATE_PROGRESS_EVENT, download_url, partial_path, cancellation)
-        .await
-        .map_err(|error| match error {
-            DownloadError::Cancelled => {
-                println!("{}", LogMessage::ServerUpdateCancelled.text());
-                CANCELLED_ERROR.to_string()
-            }
-            DownloadError::Failed(reason) => LogMessage::ServerDownloadFailed(reason).text(),
-        })?;
-
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
-    if bytes.is_empty() {
-        return Err(LogMessage::ServerDownloadFailed("downloaded binary is empty".to_string()).text());
-    }
-    Ok(bytes)
-}
-
-async fn replace_and_restart_backend(
-    app: &AppHandle,
-    writable_path: &PathBuf,
-    backup_path: &PathBuf,
-    new_binary: &[u8],
-) -> Result<(), String> {
-    kill_running_backend(app).ok();
-    kill_orphaned_backend_processes_by_name();
-    backup_current_backend_binary(app, writable_path, backup_path)?;
-
-    if let Err(install_error) = install_new_backend_binary(app, writable_path, new_binary) {
-        return Err(rollback_to_previous_backend(app, writable_path, backup_path, install_error).await);
-    }
-
-    emit_progress(app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Starting);
-    if let Err(spawn_error) = spawn_backend(app) {
-        return Err(rollback_to_previous_backend(app, writable_path, backup_path, spawn_error).await);
-    }
-
-    if !wait_for_backend_healthy(app).await {
-        let reason = "new backend binary started but did not respond to its healthcheck".to_string();
-        return Err(rollback_to_previous_backend(app, writable_path, backup_path, reason).await);
-    }
-
-    std::fs::remove_file(backup_path).ok();
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn install_server_update(app: AppHandle) -> Result<ServerStatus, String> {
-    let cancellation = take_or_create_cancellation_token(&app);
-    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::CheckingRelease);
-
-    let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
-    let release = fetch_latest_backend_release(&app).await.map_err(|error| fail_update(&app, error))?;
-    let download_url = extract_backend_download_url(&release).map_err(|error| fail_update(&app, error))?;
-    let partial_path = resolve_partial_download_path(&app).map_err(|error| fail_update(&app, error))?;
-    let writable_path = resolve_writable_backend_path(&app).map_err(|error| fail_update(&app, error))?;
-    let backup_path = resolve_backup_backend_path(&app).map_err(|error| fail_update(&app, error))?;
-
-    let new_binary = match download_new_backend_binary(&app, &download_url, &partial_path, &cancellation).await {
-        Ok(bytes) => bytes,
-        Err(error) if error == CANCELLED_ERROR => return Err(cancel_update(&app)),
-        Err(error) => return Err(fail_update(&app, error)),
-    };
-
-    if let Err(error) = replace_and_restart_backend(&app, &writable_path, &backup_path, &new_binary).await {
-        clear_cancellation_token(&app);
-        return Err(error);
-    }
-
-    clear_cancellation_token(&app);
-    let latest_version = tag_to_version_name(&release.tag_name);
-    println!("{}", LogMessage::ServerUpdateInstalled(previous_version, latest_version.clone()).text());
-    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: latest_version.clone() });
-
-    Ok(ServerStatus { running: true, installed: true, version: Some(latest_version) })
+    module_manager::cancel_module_update(&app, &module);
 }
 
 const DEV_SIDELOAD_MIN_SIZE_BYTES: usize = 1024;
@@ -595,28 +105,15 @@ const DEV_SIDELOAD_MIN_SIZE_BYTES: usize = 1024;
 /// Installs a backend binary supplied directly by the developer from the
 /// Console tab, bypassing the GitHub Releases lookup entirely. This exists
 /// for local iteration: a freshly `bun run build:server`-compiled exe often
-/// has no matching `backend-v*` GitHub release yet, so the normal update
+/// has no matching `server-v*` GitHub release yet, so the normal update
 /// path has nothing to check against. Reuses the same backup, install,
 /// restart, and healthcheck-gated rollback sequence as a real update so a
 /// bad manual build can't brick the installed backend either.
 #[tauri::command]
-pub async fn install_server_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<ServerStatus, String> {
+pub async fn install_server_from_bytes(app: AppHandle, bytes: Vec<u8>) -> Result<ModuleStatus, String> {
     if bytes.len() < DEV_SIDELOAD_MIN_SIZE_BYTES {
         return Err(LogMessage::ServerDownloadFailed("selected file is too small to be a real backend binary".to_string()).text());
     }
-
-    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Verifying);
-    let previous_version = fetch_running_backend_version(&app).await.unwrap_or_default();
-    let writable_path = resolve_writable_backend_path(&app).map_err(|error| fail_update(&app, error))?;
-    let backup_path = resolve_backup_backend_path(&app).map_err(|error| fail_update(&app, error))?;
-
-    if let Err(error) = replace_and_restart_backend(&app, &writable_path, &backup_path, &bytes).await {
-        return Err(error);
-    }
-
-    let installed_version = fetch_running_backend_version(&app).await.unwrap_or_else(|| "unknown".to_string());
-    println!("{}", LogMessage::ServerUpdateInstalled(previous_version, installed_version.clone()).text());
-    emit_progress(&app, SERVER_UPDATE_PROGRESS_EVENT, UpdateProgress::Done { version: installed_version.clone() });
-
-    Ok(ServerStatus { running: true, installed: true, version: Some(installed_version) })
+    let module = resolve_server_module(&app).await?;
+    module_manager::install_module_from_bytes(&app, &module, &bytes).await
 }

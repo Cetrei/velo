@@ -61,7 +61,7 @@ fn queue_name_wide() -> Vec<u16> {
         .collect()
 }
 
-fn create_file_mapping(total_size: usize) -> Result<HANDLE, String> {
+fn create_file_mapping(total_size: usize) -> Result<HANDLE, LogMessage> {
     let name_wide = queue_name_wide();
 
     let handle = unsafe {
@@ -75,15 +75,15 @@ fn create_file_mapping(total_size: usize) -> Result<HANDLE, String> {
         )
     };
 
-    handle.map_err(|error| LogMessage::QueueCreateFailed(error.code().0 as u32).text())
+    handle.map_err(|error| LogMessage::QueueCreateFailed(error.code().0 as u32))
 }
 
-fn map_view(handle: HANDLE, total_size: usize) -> Result<MEMORY_MAPPED_VIEW_ADDRESS, String> {
+fn map_view(handle: HANDLE, total_size: usize) -> Result<MEMORY_MAPPED_VIEW_ADDRESS, LogMessage> {
     let view = unsafe { MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, total_size) };
 
     if view.Value.is_null() {
         let error = windows::core::Error::from_win32();
-        return Err(LogMessage::QueueMapFailed(error.code().0 as u32).text());
+        return Err(LogMessage::QueueMapFailed(error.code().0 as u32));
     }
 
     Ok(view)
@@ -109,7 +109,7 @@ fn write_header_metadata(view: MEMORY_MAPPED_VIEW_ADDRESS, width: u32, height: u
 }
 
 impl SharedMemoryQueue {
-    pub fn create(width: u32, height: u32, frame_size: usize) -> Result<Self, String> {
+    pub fn create(width: u32, height: u32, frame_size: usize) -> Result<Self, LogMessage> {
         let (total_size, frame_offsets) = compute_layout(frame_size);
         let mapping_handle = create_file_mapping(total_size)?;
         let view = map_view(mapping_handle, total_size)?;
@@ -134,14 +134,13 @@ impl SharedMemoryQueue {
         unsafe { base.add(self.frame_offsets[slot_index] + FRAME_HEADER_SIZE) }
     }
 
-    pub fn write_frame(&mut self, nv12_frame: &[u8]) -> Result<(), String> {
+    pub fn write_frame(&mut self, nv12_frame: &[u8]) -> Result<(), LogMessage> {
         if nv12_frame.len() != self.frame_capacity {
             return Err(LogMessage::Nv12ConversionFailed(format!(
                 "frame size {} does not match queue capacity {}",
                 nv12_frame.len(),
                 self.frame_capacity
-            ))
-            .text());
+            )));
         }
 
         let slot = self.next_write_slot;

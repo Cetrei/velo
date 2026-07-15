@@ -33,9 +33,6 @@
     "icon": [
       "assets/icon.ico"
     ],
-    "externalBin": [
-      "binaries/velo-backend"
-    ],
     "resources": {
       "resources/obs-virtualsource.dll": "resources/obs-virtualsource.dll",
       "../../config/system.yml": "config/system.yml",

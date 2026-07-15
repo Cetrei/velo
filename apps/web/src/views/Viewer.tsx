@@ -137,7 +137,7 @@ export function Viewer() {
   }, [remoteStream]);
 
   const isConnected = connectionState === 'connected' && remotePeer !== null;
-  useFramePusher(videoRef, isConnected);
+  const { deliveryState } = useFramePusher(videoRef, isConnected);
 
   useEffect(() => {
     if (connectionState !== 'failed') return;
@@ -175,6 +175,7 @@ export function Viewer() {
             stageDetail={stageDetail}
             remotePeer={remotePeer}
             onDisconnect={handleDisconnect}
+            driverReconnecting={deliveryState === 'reconnecting'}
           />
         )}
       </>

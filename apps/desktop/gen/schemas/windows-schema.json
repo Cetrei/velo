@@ -177,22 +177,22 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-install-backend-from-bytes`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`",
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-backend-update`\n- `allow-install-backend-update`\n- `allow-install-backend-from-bytes`\n- `allow-cancel-backend-update`\n- `allow-get-backend-status`\n- `allow-start-backend`\n- `allow-restart-backend`\n- `allow-stop-backend`\n- `allow-uninstall-backend`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`"
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`"
         },
         {
-          "description": "Allows cancelling an in-progress backend download or installation.",
+          "description": "Allows cancelling an in-progress server download or installation.",
           "type": "string",
-          "const": "allow-cancel-backend-update",
-          "markdownDescription": "Allows cancelling an in-progress backend download or installation."
+          "const": "allow-cancel-server-update",
+          "markdownDescription": "Allows cancelling an in-progress server download or installation."
         },
         {
-          "description": "Allows checking GitHub Releases for a newer independently-versioned backend build.",
+          "description": "Allows checking GitHub Releases for a newer independently-versioned server build.",
           "type": "string",
-          "const": "allow-check-backend-update",
-          "markdownDescription": "Allows checking GitHub Releases for a newer independently-versioned backend build."
+          "const": "allow-check-server-update",
+          "markdownDescription": "Allows checking GitHub Releases for a newer independently-versioned server build."
         },
         {
           "description": "Allows checking cloudflare/cloudflared's GitHub Releases for a newer cloudflared build.",
@@ -207,10 +207,22 @@
           "markdownDescription": "Allows the frontend to signal that it has painted, closing the splashscreen window and showing the main window."
         },
         {
-          "description": "Allows reading the currently running backend sidecar's version and health.",
+          "description": "Allows reading Velo-Core's currently loaded version and ABI health, read-only, since Core updates itself automatically on startup.",
           "type": "string",
-          "const": "allow-get-backend-status",
-          "markdownDescription": "Allows reading the currently running backend sidecar's version and health."
+          "const": "allow-get-core-status",
+          "markdownDescription": "Allows reading Velo-Core's currently loaded version and ABI health, read-only, since Core updates itself automatically on startup."
+        },
+        {
+          "description": "Allows reading whether the virtual camera DirectShow filter is currently registered in the Windows registry.",
+          "type": "string",
+          "const": "allow-get-driver-status",
+          "markdownDescription": "Allows reading whether the virtual camera DirectShow filter is currently registered in the Windows registry."
+        },
+        {
+          "description": "Allows reading the currently running server sidecar's version and health.",
+          "type": "string",
+          "const": "allow-get-server-status",
+          "markdownDescription": "Allows reading the currently running server sidecar's version and health."
         },
         {
           "description": "Allows reading the bundled read-only system.yml config.",
@@ -231,16 +243,16 @@
           "markdownDescription": "Allows reading the user's writable user.yml config."
         },
         {
-          "description": "Allows installing a developer-supplied backend binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only.",
+          "description": "Allows installing a developer-supplied server binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only.",
           "type": "string",
-          "const": "allow-install-backend-from-bytes",
-          "markdownDescription": "Allows installing a developer-supplied backend binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only."
+          "const": "allow-install-server-from-bytes",
+          "markdownDescription": "Allows installing a developer-supplied server binary from raw bytes, bypassing the GitHub Releases lookup. Intended for dev-mode manual sideloading only."
         },
         {
-          "description": "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process.",
+          "description": "Allows downloading and installing a newer server binary, restarting the server sidecar in the process.",
           "type": "string",
-          "const": "allow-install-backend-update",
-          "markdownDescription": "Allows downloading and installing a newer backend binary, restarting the backend sidecar in the process."
+          "const": "allow-install-server-update",
+          "markdownDescription": "Allows downloading and installing a newer server binary, restarting the server sidecar in the process."
         },
         {
           "description": "Allows pushing a decoded WebRTC video frame into the virtual camera driver.",
@@ -249,16 +261,16 @@
           "markdownDescription": "Allows pushing a decoded WebRTC video frame into the virtual camera driver."
         },
         {
-          "description": "Allows killing and respawning the backend sidecar on demand without restarting the desktop app.",
-          "type": "string",
-          "const": "allow-restart-backend",
-          "markdownDescription": "Allows killing and respawning the backend sidecar on demand without restarting the desktop app."
-        },
-        {
           "description": "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings.",
           "type": "string",
           "const": "allow-restart-managed-tunnel",
           "markdownDescription": "Allows re-syncing and restarting the managed cloudflared tunnel against the current connection settings."
+        },
+        {
+          "description": "Allows killing and respawning the server sidecar on demand without restarting the desktop app.",
+          "type": "string",
+          "const": "allow-restart-server",
+          "markdownDescription": "Allows killing and respawning the server sidecar on demand without restarting the desktop app."
         },
         {
           "description": "Allows writing the user's writable user.yml config.",
@@ -267,22 +279,22 @@
           "markdownDescription": "Allows writing the user's writable user.yml config."
         },
         {
-          "description": "Allows starting the backend sidecar on demand without restarting the desktop app.",
+          "description": "Allows starting the server sidecar on demand without restarting the desktop app.",
           "type": "string",
-          "const": "allow-start-backend",
-          "markdownDescription": "Allows starting the backend sidecar on demand without restarting the desktop app."
+          "const": "allow-start-server",
+          "markdownDescription": "Allows starting the server sidecar on demand without restarting the desktop app."
         },
         {
-          "description": "Allows stopping the running backend sidecar on demand without uninstalling it.",
+          "description": "Allows stopping the running server sidecar on demand without uninstalling it.",
           "type": "string",
-          "const": "allow-stop-backend",
-          "markdownDescription": "Allows stopping the running backend sidecar on demand without uninstalling it."
+          "const": "allow-stop-server",
+          "markdownDescription": "Allows stopping the running server sidecar on demand without uninstalling it."
         },
         {
-          "description": "Allows stopping the backend sidecar and removing its binary and data directory from disk.",
+          "description": "Allows stopping the server sidecar and removing its binary and data directory from disk.",
           "type": "string",
-          "const": "allow-uninstall-backend",
-          "markdownDescription": "Allows stopping the backend sidecar and removing its binary and data directory from disk."
+          "const": "allow-uninstall-server",
+          "markdownDescription": "Allows stopping the server sidecar and removing its binary and data directory from disk."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

@@ -2,15 +2,17 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
-const BACKEND_VERSION_TAG_PATTERN = /^backend-v(\d+)\.(\d+)\.(\d+)$/;
+const BACKEND_VERSION_TAG_PATTERN = /^server-v(\d+)\.(\d+)\.(\d+)$/;
+const CORE_VERSION_TAG_PATTERN = /^core-v(\d+)\.(\d+)\.(\d+)$/;
 const SEMVER_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
 const BACKEND_FLAG = '--backend';
+const CORE_FLAG = '--core';
 const WEB_FLAG = '--web';
 const WEB_PACKAGE_JSON_PATH = join('apps', 'web', 'package.json');
 
 type SemVer = [number, number, number];
 type BumpKind = 'major' | 'minor' | 'patch';
-type ReleaseTarget = 'app' | 'backend' | 'web';
+type ReleaseTarget = 'app' | 'backend' | 'core' | 'web';
 
 interface PackageJsonRead {
   raw: string;
@@ -36,22 +38,35 @@ function findBumpFlag(): BumpKind | null {
 function parseReleaseTarget(): ReleaseTarget {
   const args = process.argv.slice(2);
   if (args.includes(BACKEND_FLAG)) return 'backend';
+  if (args.includes(CORE_FLAG)) return 'core';
   if (args.includes(WEB_FLAG)) return 'web';
   return 'app';
 }
 
 function isTargetFlag(arg: string): boolean {
-  return arg === BACKEND_FLAG || arg === WEB_FLAG;
+  return arg === BACKEND_FLAG || arg === CORE_FLAG || arg === WEB_FLAG;
+}
+
+function resolveTagPrefix(target: ReleaseTarget): string {
+  if (target === 'backend') return 'server-v';
+  if (target === 'core') return 'core-v';
+  return 'v';
+}
+
+function resolveVersionTagPattern(target: ReleaseTarget): RegExp {
+  if (target === 'backend') return BACKEND_VERSION_TAG_PATTERN;
+  if (target === 'core') return CORE_VERSION_TAG_PATTERN;
+  return VERSION_TAG_PATTERN;
 }
 
 function listVersionTags(target: ReleaseTarget): string[] {
-  const pattern = target === 'backend' ? 'backend-v*' : 'v*';
+  const pattern = `${resolveTagPrefix(target)}*`;
   const result = Bun.spawnSync(['git', 'tag', '--list', pattern]);
   return result.stdout.toString().split('\n').map((line) => line.trim()).filter(Boolean);
 }
 
 function parseSemverTag(tag: string, target: ReleaseTarget): SemVer | null {
-  const pattern = target === 'backend' ? BACKEND_VERSION_TAG_PATTERN : VERSION_TAG_PATTERN;
+  const pattern = resolveVersionTagPattern(target);
   const match = tag.match(pattern);
   if (!match) return null;
   return [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -73,7 +88,7 @@ function findLatestVersionTag(target: ReleaseTarget): SemVer {
 }
 
 function bumpSemver([major, minor, patch]: SemVer, kind: BumpKind, target: ReleaseTarget): string {
-  const prefix = target === 'backend' ? 'backend-v' : 'v';
+  const prefix = resolveTagPrefix(target);
   if (kind === 'major') return `${prefix}${major + 1}.0.0`;
   if (kind === 'minor') return `${prefix}${major}.${minor + 1}.0`;
   return `${prefix}${major}.${minor}.${patch + 1}`;
@@ -82,7 +97,7 @@ function bumpSemver([major, minor, patch]: SemVer, kind: BumpKind, target: Relea
 function resolveVersionTagFromBumpFlag(kind: BumpKind, target: ReleaseTarget): string {
   const latest = findLatestVersionTag(target);
   const nextTag = bumpSemver(latest, kind, target);
-  const latestLabel = target === 'backend' ? `backend-v${latest.join('.')}` : `v${latest.join('.')}`;
+  const latestLabel = `${resolveTagPrefix(target)}${latest.join('.')}`;
   console.log(`[RELEASE] Latest ${target} tag ${latestLabel}, bumping ${kind} -> ${nextTag}`);
   return nextTag;
 }
@@ -91,7 +106,7 @@ function parseVersionArg(target: ReleaseTarget): string {
   const args = process.argv.slice(2);
   const arg = args.find((value) => !isTargetFlag(value));
   if (!arg) {
-    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z | backend-vX.Y.Z | --major | --minor | --patch [--backend]');
+    console.error('[RELEASE] Usage: bun scripts/release.ts vX.Y.Z | server-vX.Y.Z | core-vX.Y.Z | --major | --minor | --patch [--backend|--core]');
     process.exit(1);
   }
 
@@ -100,8 +115,8 @@ function parseVersionArg(target: ReleaseTarget): string {
     return resolveVersionTagFromBumpFlag(bumpKind, target);
   }
 
-  if (!VERSION_TAG_PATTERN.test(arg) && !BACKEND_VERSION_TAG_PATTERN.test(arg)) {
-    console.error(`[RELEASE] "${arg}" does not match vX.Y.Z, backend-vX.Y.Z, or --major/--minor/--patch`);
+  if (!VERSION_TAG_PATTERN.test(arg) && !BACKEND_VERSION_TAG_PATTERN.test(arg) && !CORE_VERSION_TAG_PATTERN.test(arg)) {
+    console.error(`[RELEASE] "${arg}" does not match vX.Y.Z, server-vX.Y.Z, core-vX.Y.Z, or --major/--minor/--patch`);
     process.exit(1);
   }
   return arg;

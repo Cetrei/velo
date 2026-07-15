@@ -28,6 +28,8 @@
     "allow-uninstall-server",
     "allow-get-tunnel-status",
     "allow-check-tunnel-update",
-    "allow-restart-managed-tunnel"
+    "allow-restart-managed-tunnel",
+    "allow-get-driver-status",
+    "allow-get-core-status"
   ]
 }
