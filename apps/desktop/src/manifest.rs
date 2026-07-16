@@ -155,14 +155,59 @@ async fn download_asset_text(url: &str) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|error| LogMessage::ManifestFetchFailed(format!("asset is not valid UTF-8: {error}")).text())
 }
 
+/// The minisign crate's raw box format starts with this exact line. Used
+/// to tell apart the two shapes `tauri signer sign` can hand back a
+/// signature in, see `normalize_signature_text` below.
+const MINISIGN_UNTRUSTED_COMMENT_PREFIX: &str = "untrusted comment:";
+
+/// `tauri signer sign config/manifest.json` writes the real minisign box
+/// (4 lines: untrusted comment, signature, trusted comment, global
+/// signature) to `config/manifest.json.sig` on disk, and separately prints
+/// that same box base64-encoded as a single line to stdout under a
+/// "Public signature:" label, meant for pasting into a JSON `signature`
+/// field by hand. In this repo's release workflow, the asset that actually
+/// ends up published to the GitHub Release is that base64-encoded stdout
+/// line, not the 4-line file `minisign_verify::Signature::decode` expects
+/// (confirmed against a real release: the published `manifest.json.sig`
+/// decodes as base64 into the 4-line box). Rather than special-case that
+/// one workflow quirk, this normalizes on read: if the text already looks
+/// like a raw minisign box, use it as-is (covers a differently-configured
+/// CI, or a hand-placed `.sig` during local testing); otherwise treat it
+/// as the base64-wrapped form Tauri's CLI prints and decode one layer
+/// before handing it to `Signature::decode`. Doing this here, at the one
+/// point both call sites (network fetch and cache re-verification) funnel
+/// through, means neither has to know which shape it received.
+fn normalize_signature_text(signature_text: &str) -> Result<String, String> {
+    if signature_text.trim_start().starts_with(MINISIGN_UNTRUSTED_COMMENT_PREFIX) {
+        return Ok(signature_text.to_string());
+    }
+
+    let decoded_bytes = base64_decode_signature_box(signature_text.trim())?;
+    String::from_utf8(decoded_bytes).map_err(|error| {
+        LogMessage::ManifestSignatureInvalid(format!("signature asset was base64 but did not decode to valid UTF-8: {error}")).text()
+    })
+}
+
+/// Minimal standard-alphabet base64 decoder for the one string this module
+/// needs to unwrap (Tauri's stdout-printed signature). Not reusing a
+/// dependency here since `minisign_verify`'s own base64 decoder is a
+/// private module of that crate, not exposed for outside use.
+fn base64_decode_signature_box(input: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(input)
+        .map_err(|error| LogMessage::ManifestSignatureInvalid(format!("failed to decode signature asset as base64: {error}")).text())
+}
+
 /// Verifies the manifest's minisign signature before returning its bytes.
 /// This must run before any JSON parsing happens: verifying after parsing
 /// would mean a malformed-but-plausible manifest could already have been
 /// acted on by the time the signature check fails.
 fn verify_manifest_signature(manifest_json: &str, signature_text: &str) -> Result<(), String> {
+    let normalized_signature_text = normalize_signature_text(signature_text)?;
     let public_key = PublicKey::from_base64(MANIFEST_PUBLIC_KEY_BASE64)
         .map_err(|error| LogMessage::ManifestSignatureInvalid(format!("failed to load trusted public key: {error}")).text())?;
-    let signature = Signature::decode(signature_text)
+    let signature = Signature::decode(&normalized_signature_text)
         .map_err(|error| LogMessage::ManifestSignatureInvalid(format!("failed to decode signature: {error}")).text())?;
 
     public_key
