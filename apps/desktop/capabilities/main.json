@@ -1,12 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Grants the main window IPC access to Velo's Tauri commands when loaded from the remote Cloudflare Pages origin. Tauri v2 denies IPC to remote content by default, so this is required for push_frame, get_user_config, and save_user_config to work once the window navigates to VELO_PAGES_URL instead of a bundled local frontend. If the Pages domain ever changes away from cetrei.dev, update the remote.urls pattern here to match, since this file cannot read VELO_PAGES_URL from .env.",
+  "description": "Grants the main window IPC access to Velo's Tauri commands when loaded from the remote Cloudflare Pages origin, or from the loopback origin frontend_loader.rs serves the local UI cache from when VELO_PAGES_URL is unreachable at startup (Phase 6.1b). Tauri v2 denies IPC to remote content by default, so this is required for push_frame, get_user_config, and save_user_config to work in either case. If the Pages domain ever changes away from cetrei.dev, update the remote.urls pattern here to match, since this file cannot read VELO_PAGES_URL from .env. The loopback entry uses a wildcard port since frontend_loader.rs picks a free port at runtime via portpicker.",
   "windows": ["main"],
   "webviews": ["main"],
   "local": false,
   "remote": {
-    "urls": ["https://*.cetrei.dev"]
+    "urls": ["https://*.cetrei.dev", "http://127.0.0.1:*"]
   },
   "permissions": [
     "core:default",
@@ -29,6 +29,7 @@
     "allow-get-tunnel-status",
     "allow-check-tunnel-update",
     "allow-restart-managed-tunnel",
+    "allow-stop-managed-tunnel",
     "allow-get-driver-status",
     "allow-get-core-status"
   ]

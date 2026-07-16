@@ -2,10 +2,19 @@ import type { Express } from 'express';
 import { createPairing, findRoomIdByOtp } from './pairing';
 
 const OTP_PATTERN = /^\d{6}$/;
+const MAX_CREATOR_DEVICE_NAME_LENGTH = 64;
+
+function sanitizeCreatorDeviceName(deviceName: unknown): string | undefined {
+  if (typeof deviceName !== 'string' || deviceName.trim().length === 0) {
+    return undefined;
+  }
+  return deviceName.slice(0, MAX_CREATOR_DEVICE_NAME_LENGTH);
+}
 
 export function registerPairingRoutes(app: Express): void {
-  app.post('/pairing/create', (_request, response) => {
-    const pairing = createPairing();
+  app.post('/pairing/create', (request, response) => {
+    const creatorDeviceName = sanitizeCreatorDeviceName(request.body?.deviceName);
+    const pairing = createPairing(creatorDeviceName);
     response.json({ roomId: pairing.roomId, otp: pairing.otp, expiresAt: pairing.expiresAt });
   });
 

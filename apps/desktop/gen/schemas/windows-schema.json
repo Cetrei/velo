@@ -177,10 +177,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`",
+          "description": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-stop-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`"
+          "markdownDescription": "Default permission set granting access to all of Velo's own app-level commands.\n#### This permission set includes:\n\n- `allow-push-frame`\n- `allow-get-system-config`\n- `allow-get-user-config`\n- `allow-save-user-config`\n- `allow-close-splashscreen`\n- `allow-check-server-update`\n- `allow-install-server-update`\n- `allow-install-server-from-bytes`\n- `allow-cancel-server-update`\n- `allow-get-server-status`\n- `allow-start-server`\n- `allow-restart-server`\n- `allow-stop-server`\n- `allow-uninstall-server`\n- `allow-get-tunnel-status`\n- `allow-check-tunnel-update`\n- `allow-restart-managed-tunnel`\n- `allow-stop-managed-tunnel`\n- `allow-get-driver-status`\n- `allow-get-core-status`"
         },
         {
           "description": "Allows cancelling an in-progress server download or installation.",
@@ -283,6 +283,12 @@
           "type": "string",
           "const": "allow-start-server",
           "markdownDescription": "Allows starting the server sidecar on demand without restarting the desktop app."
+        },
+        {
+          "description": "Allows stopping the managed cloudflared tunnel on demand without uninstalling it.",
+          "type": "string",
+          "const": "allow-stop-managed-tunnel",
+          "markdownDescription": "Allows stopping the managed cloudflared tunnel on demand without uninstalling it."
         },
         {
           "description": "Allows stopping the running server sidecar on demand without uninstalling it.",

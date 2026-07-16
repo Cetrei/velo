@@ -10,6 +10,7 @@ import type {
   NegotiationStage,
   ConnectionConfig,
   RelayFrameMetadata,
+  RoleSwapRequestPayload,
 } from 'shared-types';
 import { createSignalingSocket, loadIceServers, loadUserConfig } from '../lib/signaling-client';
 import { getDeviceName } from '../lib/device-identity';
@@ -18,7 +19,7 @@ import { captureJpegFrame, drawJpegFrameToCanvas } from '../lib/frame-relay';
 
 const RELAY_FRAME_INTERVAL_MS = 1000 / 30;
 
-export type WebRtcStage = NegotiationStage;
+export type WebRtcStage = NegotiationStage | 'roleMismatch';
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 
 const STAGE_TO_CONNECTION_STATE: Record<WebRtcStage, ConnectionState> = {
@@ -32,6 +33,7 @@ const STAGE_TO_CONNECTION_STATE: Record<WebRtcStage, ConnectionState> = {
   peerLeft: 'disconnected',
   socketError: 'failed',
   failed: 'failed',
+  roleMismatch: 'failed',
 };
 
 const WAITING_FOR_PEER_TIMEOUT_MS = 30_000;
@@ -46,8 +48,15 @@ interface UseWebRtcOptions {
   signalingUrl: string;
   roomId: string;
   otp: string;
+  /**
+   * The role this device's current view is physically capable of performing (e.g. Host.tsx
+   * always passes 'host' since it is the camera-capture view). This is a capability declaration,
+   * not a claim about what the server will assign. The connection only actually proceeds once the
+   * server's negotiated role (via room-sync) matches this value; see expectedRole/negotiatedRole
+   * mismatch handling below, which surfaces 'roleMismatch' instead of silently operating under
+   * the wrong assumption.
+   */
   role: PeerRole;
-  isInitiator: boolean;
   localStream?: MediaStream | null;
   readyToJoin?: boolean;
   connectionMode?: ConnectionConfig['mode'];
@@ -57,6 +66,7 @@ interface UseWebRtcOptions {
 type StageListener = (stage: WebRtcStage, detail?: string) => void;
 type RemoteStreamListener = (stream: MediaStream | null) => void;
 type RemotePeerListener = (peer: RemotePeerInfo | null) => void;
+type NegotiatedRoleListener = (role: PeerRole | null) => void;
 
 interface ConnectionHandle {
   sessionId: string;
@@ -65,9 +75,12 @@ interface ConnectionHandle {
   stageListeners: Set<StageListener>;
   streamListeners: Set<RemoteStreamListener>;
   peerListeners: Set<RemotePeerListener>;
+  negotiatedRoleListeners: Set<NegotiatedRoleListener>;
   currentStage: WebRtcStage;
   currentRemoteStream: MediaStream | null;
   currentRemotePeer: RemotePeerInfo | null;
+  currentNegotiatedRole: PeerRole | null;
+  isInitiator: boolean;
   refCount: number;
   hasSentOffer: boolean;
   waitingForPeerTimer: ReturnType<typeof setTimeout> | null;
@@ -105,6 +118,12 @@ function setHandleRemoteStream(handle: ConnectionHandle, stream: MediaStream | n
 function setHandleRemotePeer(handle: ConnectionHandle, peer: RemotePeerInfo | null): void {
   handle.currentRemotePeer = peer;
   handle.peerListeners.forEach((listener) => listener(peer));
+}
+
+function setHandleNegotiatedRole(handle: ConnectionHandle, role: PeerRole | null): void {
+  if (handle.currentNegotiatedRole === role) return;
+  handle.currentNegotiatedRole = role;
+  handle.negotiatedRoleListeners.forEach((listener) => listener(role));
 }
 
 function clearWaitingForPeerTimer(handle: ConnectionHandle): void {
@@ -304,8 +323,7 @@ function createConnection(
   signalingUrl: string,
   roomId: string,
   otp: string,
-  role: PeerRole,
-  isInitiator: boolean,
+  expectedRole: PeerRole,
   localStream: MediaStream | null | undefined,
   connectionMode: ConnectionConfig['mode'],
   connectionConfig: ConnectionConfig | undefined,
@@ -319,9 +337,12 @@ function createConnection(
     stageListeners: new Set(),
     streamListeners: new Set(),
     peerListeners: new Set(),
+    negotiatedRoleListeners: new Set(),
     currentStage: 'idle',
     currentRemoteStream: null,
     currentRemotePeer: null,
+    currentNegotiatedRole: null,
+    isInitiator: false,
     refCount: 0,
     hasSentOffer: false,
     waitingForPeerTimer: null,
@@ -332,7 +353,7 @@ function createConnection(
 
   function stageIfActive(stage: WebRtcStage, detail?: string) {
     if (isTornDown) return;
-    setHandleStage(handle, role, roomId, stage, detail);
+    setHandleStage(handle, expectedRole, roomId, stage, detail);
   }
 
   function teardownActiveSocketAndPeer(): void {
@@ -345,9 +366,9 @@ function createConnection(
   }
 
   async function trySendOfferOnce(peer: RTCPeerConnection | null, socket: Socket) {
-    if (!peer || !isInitiator || handle.hasSentOffer || isTornDown) return;
+    if (!peer || !handle.isInitiator || handle.hasSentOffer || isTornDown) return;
     handle.hasSentOffer = true;
-    await sendOffer(peer, socket, roomId, role, sessionId);
+    await sendOffer(peer, socket, roomId, expectedRole, sessionId);
   }
 
   function markConnectedInRelayModeIfPeerPresent(): void {
@@ -365,21 +386,21 @@ function createConnection(
 
     peer.ontrack = (event) => {
       setHandleRemoteStream(handle, event.streams[0] ?? null);
-      logStage(role, roomId, sessionId, 'negotiating', 'remote track received');
+      logStage(expectedRole, roomId, sessionId, 'negotiating', 'remote track received');
     };
     peer.oniceconnectionstatechange = () => {
       const iceState = peer.iceConnectionState;
-      logStage(role, roomId, sessionId, 'negotiating', `ice: ${iceState}`);
+      logStage(expectedRole, roomId, sessionId, 'negotiating', `ice: ${iceState}`);
       if (iceState === 'failed') {
-        reportIceFailureDiagnostics(peer, role, roomId, sessionId).catch((diagnosticsError) => {
-          logWarn(role, roomId, sessionId, `failed to collect ICE diagnostics: ${String(diagnosticsError)}`);
+        reportIceFailureDiagnostics(peer, expectedRole, roomId, sessionId).catch((diagnosticsError) => {
+          logWarn(expectedRole, roomId, sessionId, `failed to collect ICE diagnostics: ${String(diagnosticsError)}`);
         });
         stageIfActive('failed', 'ICE connection failed');
       }
     };
     peer.onconnectionstatechange = () => {
       const state = peer.connectionState;
-      logStage(role, roomId, sessionId, 'negotiating', `peer connection: ${state}`);
+      logStage(expectedRole, roomId, sessionId, 'negotiating', `peer connection: ${state}`);
       if (state === 'connected') {
         clearWaitingForPeerTimer(handle);
         stageIfActive('connected');
@@ -392,8 +413,8 @@ function createConnection(
     };
 
     socket.on('signal', (payload: SignalingPayload) => {
-      handleIncomingSignal(peer, socket, roomId, role, sessionId, payload).catch((signalError) => {
-        logWarn(role, roomId, sessionId, `failed to handle incoming signal (${payload.type}): ${String(signalError)}`);
+      handleIncomingSignal(peer, socket, roomId, expectedRole, sessionId, payload).catch((signalError) => {
+        logWarn(expectedRole, roomId, sessionId, `failed to handle incoming signal (${payload.type}): ${String(signalError)}`);
       });
     });
 
@@ -403,9 +424,27 @@ function createConnection(
   function setUpRelayTransport(socket: Socket): void {
     handle.peer = null;
     attachRelayFrameReceiver(handle, socket, roomId);
-    if (isInitiator) {
+    if (handle.isInitiator) {
       startRelayFrameLoop(handle, socket, roomId, localStream);
     }
+  }
+
+  let peerRef: RTCPeerConnection | null = null;
+
+  /**
+   * The transport (RTCPeerConnection or the JPEG relay loop) is deliberately not created until
+   * the first room-sync tells us the actual negotiated role, since isInitiator and which loop to
+   * run both depend on it. Before that point the connection sits in 'joiningRoom'/'waitingForPeer'
+   * with no peer/relay wired up yet - see the room-sync handler below for where this actually
+   * happens once the role is known.
+   */
+  function setUpTransportForNegotiatedRole(socket: Socket, iceServers: RTCIceServer[], userConfig: { enable_reconnection_loop: boolean; reconnection_interval_ms: number }): void {
+    const isRelayMode = connectionMode === 'cloudflare_relay';
+    if (isRelayMode) {
+      setUpRelayTransport(socket);
+      return;
+    }
+    peerRef = setUpPeerConnectionTransport(socket, iceServers, userConfig);
   }
 
   async function connect() {
@@ -418,35 +457,45 @@ function createConnection(
     const socket = createSignalingSocket(signalingUrl);
     handle.socket = socket;
     handle.hasSentOffer = false;
-
-    const isRelayMode = connectionMode === 'cloudflare_relay';
-    const peer = isRelayMode ? null : setUpPeerConnectionTransport(socket, iceServers, userConfig);
-    if (isRelayMode) {
-      setUpRelayTransport(socket);
-    }
+    peerRef = null;
+    let transportInitialized = false;
 
     socket.on('connect_error', (connectError) => {
-      logWarn(role, roomId, sessionId, `socket connect_error: ${connectError.message}`);
+      logWarn(expectedRole, roomId, sessionId, `socket connect_error: ${connectError.message}`);
       stageIfActive('socketError', connectError.message);
     });
 
     socket.on('join-rejected', (payload: JoinRejectedPayload) => {
       if (payload.roomId !== roomId) return;
       const detail = describeJoinRejection(payload.reason);
-      logWarn(role, roomId, sessionId, `join-room rejected: ${detail}`);
+      logWarn(expectedRole, roomId, sessionId, `join-room rejected: ${detail}`);
       stageIfActive('failed', detail);
     });
 
     socket.on('room-sync', (payload: RoomSyncPayload) => {
       if (payload.roomId !== roomId) return;
-      logStage(role, roomId, sessionId, 'joiningRoom', `room-sync received, ${payload.peers.length} other peer(s)`);
+      logStage(expectedRole, roomId, sessionId, 'joiningRoom', `room-sync received, ${payload.peers.length} other peer(s)`);
+      setHandleNegotiatedRole(handle, payload.you.role);
+
+      if (payload.you.role !== expectedRole) {
+        logWarn(expectedRole, roomId, sessionId, `server assigned role '${payload.you.role}' but this view can only act as '${expectedRole}'`);
+        stageIfActive('roleMismatch', `assigned '${payload.you.role}', expected '${expectedRole}'`);
+        return;
+      }
+
+      if (!transportInitialized) {
+        transportInitialized = true;
+        handle.isInitiator = payload.you.role === 'host';
+        setUpTransportForNegotiatedRole(socket, iceServers, userConfig);
+      }
+
       const firstPeer = payload.peers[0];
       if (firstPeer) {
         clearWaitingForPeerTimer(handle);
         setHandleRemotePeer(handle, { peerId: firstPeer.peerId, role: firstPeer.role, deviceName: firstPeer.deviceName });
         stageIfActive('negotiating', `peer ${firstPeer.peerId} (${firstPeer.role}, ${firstPeer.deviceName}) present via room-sync`);
-        trySendOfferOnce(peer, socket).catch((offerError) => {
-          logWarn(role, roomId, sessionId, `failed to send offer after room-sync: ${String(offerError)}`);
+        trySendOfferOnce(peerRef, socket).catch((offerError) => {
+          logWarn(expectedRole, roomId, sessionId, `failed to send offer after room-sync: ${String(offerError)}`);
         });
         markConnectedInRelayModeIfPeerPresent();
       } else if (handle.currentStage !== 'connected' && handle.currentStage !== 'negotiating') {
@@ -456,12 +505,13 @@ function createConnection(
 
     socket.on('peer-joined', (payload: PeerPresencePayload) => {
       if (payload.roomId !== roomId) return;
+      if (handle.currentStage === 'roleMismatch') return;
       const joinedDeviceName = payload.deviceName ?? 'unknown device';
       setHandleRemotePeer(handle, { peerId: payload.peerId, role: payload.role, deviceName: joinedDeviceName });
       clearWaitingForPeerTimer(handle);
       stageIfActive('negotiating', `peer ${payload.peerId} (${payload.role}, ${joinedDeviceName}) present`);
-      trySendOfferOnce(peer, socket).catch((offerError) => {
-        logWarn(role, roomId, sessionId, `failed to send offer after peer join: ${String(offerError)}`);
+      trySendOfferOnce(peerRef, socket).catch((offerError) => {
+        logWarn(expectedRole, roomId, sessionId, `failed to send offer after peer join: ${String(offerError)}`);
       });
       markConnectedInRelayModeIfPeerPresent();
     });
@@ -477,13 +527,13 @@ function createConnection(
     });
 
     stageIfActive('joiningRoom');
-    const joinPayload: SessionJoinPayload = { roomId, passkey: otp, role, deviceName: getDeviceName(), sessionId };
+    const joinPayload: SessionJoinPayload = { roomId, passkey: otp, deviceName: getDeviceName(), sessionId };
     socket.emit('join-room', joinPayload);
 
     stageIfActive('waitingForPeer');
     handle.waitingForPeerTimer = setTimeout(() => {
       if (isTornDown) return;
-      logWarn(role, roomId, sessionId, `no peer joined within ${WAITING_FOR_PEER_TIMEOUT_MS}ms of joining the room`);
+      logWarn(expectedRole, roomId, sessionId, `no peer joined within ${WAITING_FOR_PEER_TIMEOUT_MS}ms of joining the room`);
       stageIfActive('failed', 'timed out waiting for the other device');
     }, WAITING_FOR_PEER_TIMEOUT_MS);
   }
@@ -498,7 +548,7 @@ function createConnection(
   };
 
   connect().catch((connectError) => {
-    logWarn(role, roomId, sessionId, `connect() failed: ${String(connectError)}`);
+    logWarn(expectedRole, roomId, sessionId, `connect() failed: ${String(connectError)}`);
     stageIfActive('failed', 'unexpected error during connection setup');
   });
 
@@ -510,7 +560,6 @@ export function useWebRtc({
   roomId,
   otp,
   role,
-  isInitiator,
   localStream,
   readyToJoin = true,
   connectionMode = 'stun_p2p',
@@ -520,6 +569,7 @@ export function useWebRtc({
   const [stageDetail, setStageDetail] = useState<string | undefined>(undefined);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [remotePeer, setRemotePeer] = useState<RemotePeerInfo | null>(null);
+  const [negotiatedRole, setNegotiatedRole] = useState<PeerRole | null>(null);
   const handleRef = useRef<ConnectionHandle | null>(null);
   const keyRef = useRef<string | null>(null);
   const signalingUrlRef = useRef(signalingUrl);
@@ -542,7 +592,6 @@ export function useWebRtc({
         roomId,
         otp,
         role,
-        isInitiator,
         localStream,
         connectionMode,
         connectionConfig,
@@ -560,20 +609,24 @@ export function useWebRtc({
     };
     const streamListener: RemoteStreamListener = (stream) => setRemoteStream(stream);
     const peerListener: RemotePeerListener = (peer) => setRemotePeer(peer);
+    const negotiatedRoleListener: NegotiatedRoleListener = (nextRole) => setNegotiatedRole(nextRole);
 
     handle.stageListeners.add(stageListener);
     handle.streamListeners.add(streamListener);
     handle.peerListeners.add(peerListener);
+    handle.negotiatedRoleListeners.add(negotiatedRoleListener);
 
     setStage(handle.currentStage);
     setStageDetail(undefined);
     setRemoteStream(handle.currentRemoteStream);
     setRemotePeer(handle.currentRemotePeer);
+    setNegotiatedRole(handle.currentNegotiatedRole);
 
     return () => {
       handle!.stageListeners.delete(stageListener);
       handle!.streamListeners.delete(streamListener);
       handle!.peerListeners.delete(peerListener);
+      handle!.negotiatedRoleListeners.delete(negotiatedRoleListener);
       handle!.refCount -= 1;
 
       if (handle!.refCount <= 0) {
@@ -585,7 +638,7 @@ export function useWebRtc({
         void teardownTimer;
       }
     };
-  }, [signalingUrl, roomId, otp, role, isInitiator, localStream, readyToJoin, connectionMode, connectionConfig]);
+  }, [signalingUrl, roomId, otp, role, localStream, readyToJoin, connectionMode, connectionConfig]);
 
   function disconnect() {
     const handle = handleRef.current;
@@ -596,6 +649,22 @@ export function useWebRtc({
     setStage('idle');
     setRemoteStream(null);
     setRemotePeer(null);
+    setNegotiatedRole(null);
+  }
+
+  /**
+   * Manual fallback for the rare case where resolveRoleForFreshJoin's identity-based reclaim
+   * (see apps/server/src/pairing.ts) still leaves a room with the wrong device holding 'host',
+   * or where a room's recognized host never reconnects. Emits a swap-role request on the active
+   * socket; the server broadcasts a fresh room-sync to every peer in the room once the swap is
+   * applied, which updates negotiatedRole here via the existing room-sync listener. No-op if
+   * there is no active connection to swap on.
+   */
+  function swapRole() {
+    const handle = handleRef.current;
+    if (!handle?.socket) return;
+    const payload: RoleSwapRequestPayload = { roomId };
+    handle.socket.emit('swap-role', payload);
   }
 
   return {
@@ -604,7 +673,9 @@ export function useWebRtc({
     connectionState: STAGE_TO_CONNECTION_STATE[stage],
     remoteStream,
     remotePeer,
+    negotiatedRole,
     disconnect,
+    swapRole,
     peer: handleRef.current?.peer ?? null,
     socket: handleRef.current?.socket ?? null,
   };

@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const TAURI_CONF_PATH = join('apps', 'desktop', 'tauri.conf.json');
-const ANDROID_VARIABLES_PATH = join('apps', 'web', 'android', 'variables.gradle');
+const ANDROID_VARIABLES_PATH = join('apps', 'android', 'variables.gradle');
 const SERVER_PACKAGE_JSON_PATH = join('apps', 'server', 'package.json');
 const VERSION_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const SERVER_VERSION_TAG_PATTERN = /^server-v(\d+)\.(\d+)\.(\d+)$/;

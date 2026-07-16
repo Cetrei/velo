@@ -67,6 +67,16 @@ pub enum LogMessage {
     DriverNotRegistered(String),
     DriverRegistrationRestored(String),
     DriverRegistrationLost(String),
+    FrontendVerifyRetrying(u32, String),
+    FrontendVerifyExhausted(u32),
+    FrontendCacheDirResolveFailed,
+    FrontendCacheRefreshStarted,
+    FrontendCacheRefreshFailed(String),
+    FrontendCacheRefreshCompleted(usize),
+    FrontendCacheUnavailable,
+    FrontendCacheServing(u16),
+    FrontendLocalhostPortPickFailed,
+    FrontendFallbackToEmbedded,
 }
 
 impl LogMessage {
@@ -275,6 +285,36 @@ impl LogMessage {
             }
             LogMessage::DriverRegistrationLost(clsid) => {
                 format!("[DRIVER_WATCHDOG] Virtual camera filter {clsid} was registered but is no longer found in the registry, likely an uninstall or a corrupted install")
+            }
+            LogMessage::FrontendVerifyRetrying(attempt, reason) => {
+                format!("[FRONTEND_LOADER] Verification request to VELO_PAGES_URL failed (attempt {attempt}): {reason}")
+            }
+            LogMessage::FrontendVerifyExhausted(attempts) => {
+                format!("[FRONTEND_LOADER] VELO_PAGES_URL still unreachable after {attempts} verification attempts, falling back to the local UI cache")
+            }
+            LogMessage::FrontendCacheDirResolveFailed => {
+                "[FRONTEND_LOADER] Failed to resolve the writable UI cache directory under app_data_dir".to_string()
+            }
+            LogMessage::FrontendCacheRefreshStarted => {
+                "[FRONTEND_LOADER] Refreshing the local UI cache from the reachable VELO_PAGES_URL origin".to_string()
+            }
+            LogMessage::FrontendCacheRefreshFailed(reason) => {
+                format!("[FRONTEND_LOADER] Failed to refresh the local UI cache, next offline fallback will serve an older copy or the embedded build: {reason}")
+            }
+            LogMessage::FrontendCacheRefreshCompleted(file_count) => {
+                format!("[FRONTEND_LOADER] Local UI cache refreshed successfully, {file_count} files written")
+            }
+            LogMessage::FrontendCacheUnavailable => {
+                "[FRONTEND_LOADER] No local UI cache exists on disk yet, falling back to the embedded frontendDist build".to_string()
+            }
+            LogMessage::FrontendCacheServing(port) => {
+                format!("[FRONTEND_LOADER] Serving the local UI cache via a static file server on loopback port {port}")
+            }
+            LogMessage::FrontendLocalhostPortPickFailed => {
+                "[FRONTEND_LOADER] Failed to pick a free loopback port to serve the local UI cache, falling back to the embedded frontendDist build".to_string()
+            }
+            LogMessage::FrontendFallbackToEmbedded => {
+                "[FRONTEND_LOADER] Falling back to the embedded frontendDist build, no local UI cache was usable".to_string()
             }
         }
     }

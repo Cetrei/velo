@@ -8,6 +8,7 @@ import type {
   RoomPeerSnapshot,
   JoinRejectedPayload,
   RelayFrameMetadata,
+  RoleSwapRequestPayload,
 } from 'shared-types';
 import { formatLog, LogMessage } from './log-messages';
 import {
@@ -19,6 +20,8 @@ import {
   reattachSocketToSession,
   registerRoomJoin,
   registerRoomLeave,
+  resolveRoleForFreshJoin,
+  swapRoomRoles,
   type RoomPeerRecord,
 } from './pairing';
 
@@ -37,17 +40,23 @@ function isValidSessionJoinPayload(payload: unknown): payload is SessionJoinPayl
     return false;
   }
   const candidate = payload as Record<string, unknown>;
-  const hasValidRole = candidate.role === 'host' || candidate.role === 'viewer';
   return (
     typeof candidate.roomId === 'string' &&
     typeof candidate.passkey === 'string' &&
     typeof candidate.sessionId === 'string' &&
-    candidate.sessionId.length > 0 &&
-    hasValidRole
+    candidate.sessionId.length > 0
   );
 }
 
 function isValidDisconnectPayload(payload: unknown): payload is DisconnectPayload {
+  if (typeof payload !== 'object' || payload === null) {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  return typeof candidate.roomId === 'string';
+}
+
+function isValidRoleSwapRequestPayload(payload: unknown): payload is RoleSwapRequestPayload {
   if (typeof payload !== 'object' || payload === null) {
     return false;
   }
@@ -125,7 +134,7 @@ function handleJoinRoom(socket: Socket, payload: unknown): void {
     return;
   }
 
-  const { roomId, passkey, role, sessionId } = payload;
+  const { roomId, passkey, sessionId } = payload;
   const deviceName = sanitizeDeviceName(payload.deviceName);
 
   const outcome = evaluateJoin(roomId, passkey, sessionId);
@@ -139,6 +148,7 @@ function handleJoinRoom(socket: Socket, payload: unknown): void {
   socketRoomMap.set(socket.id, roomId);
 
   if (outcome.kind === 'joined_fresh') {
+    const role = resolveRoleForFreshJoin(roomId, deviceName);
     registerRoomJoin(roomId, socket.id, sessionId, role, deviceName);
     const you = getPeerRecord(roomId, sessionId);
     if (you) {
@@ -147,10 +157,50 @@ function handleJoinRoom(socket: Socket, payload: unknown): void {
     console.log(formatLog(LogMessage.RoomJoined, { sessionId, deviceName, peerId: socket.id, roomId, role }));
   } else {
     reattachSocketToSession(roomId, socket.id, sessionId);
+    const role = getPeerRecord(roomId, sessionId)?.role ?? 'unknown';
     console.log(formatLog(LogMessage.RoomResynced, { sessionId, deviceName, peerId: socket.id, roomId, role }));
   }
 
   sendRoomSync(socket, roomId, sessionId);
+}
+
+function broadcastRoomSyncToAllPeers(io: Server, roomId: string): void {
+  getAllPeersInRoom(roomId).forEach((peer) => {
+    const peerSocket = io.sockets.sockets.get(peer.socketId);
+    if (!peerSocket) {
+      return;
+    }
+    sendRoomSync(peerSocket, roomId, peer.sessionId);
+  });
+}
+
+function handleSwapRole(io: Server, socket: Socket, payload: unknown): void {
+  if (!isValidRoleSwapRequestPayload(payload)) {
+    console.warn(formatLog(LogMessage.RoleSwapPayloadInvalid, { peerId: socket.id }));
+    return;
+  }
+
+  const { roomId } = payload;
+  const ownedRoomId = socketRoomMap.get(socket.id);
+  if (ownedRoomId !== roomId) {
+    console.warn(formatLog(LogMessage.RoleSwapRejectedNotInRoom, { peerId: socket.id, roomId }));
+    return;
+  }
+
+  const outcome = swapRoomRoles(roomId);
+  if (!outcome.succeeded) {
+    console.warn(formatLog(LogMessage.RoleSwapRejectedEmptyRoom, { roomId }));
+    return;
+  }
+
+  console.log(
+    formatLog(LogMessage.RoleSwapSucceeded, {
+      roomId,
+      peerId: socket.id,
+      newHostDeviceName: outcome.newHostDeviceName ?? 'none',
+    }),
+  );
+  broadcastRoomSyncToAllPeers(io, roomId);
 }
 
 function handleSignal(io: Server, socket: Socket, payload: unknown): void {
@@ -247,6 +297,7 @@ export function registerSignalingHandlers(io: Server, socket: Socket): void {
   socket.on('join-room', (payload: unknown) => handleJoinRoom(socket, payload));
   socket.on('signal', (payload: unknown) => handleSignal(io, socket, payload));
   socket.on('relay-frame', (metadata: unknown, bytes: unknown) => handleRelayFrame(socket, io, metadata, bytes));
+  socket.on('swap-role', (payload: unknown) => handleSwapRole(io, socket, payload));
   socket.on('disconnect-peer', (payload: unknown) => handleDisconnectPeer(socket, payload));
   socket.on('disconnect', () => handleDisconnect(socket));
 }

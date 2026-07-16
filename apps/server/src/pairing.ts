@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import type { PeerRole } from 'shared-types';
 import { formatLog, LogMessage } from './log-messages';
 
 const OTP_TTL_MS = 120_000;
@@ -11,16 +12,34 @@ interface PendingPairing {
   expiresAt: number;
 }
 
+interface SwapOutcome {
+  succeeded: boolean;
+  newHostDeviceName: string | null;
+}
+
 export interface RoomPeerRecord {
   socketId: string;
   sessionId: string;
-  role: string;
+  role: PeerRole;
   deviceName: string;
 }
 
 const pendingPairings = new Map<string, PendingPairing>();
 const roomPeersBySession = new Map<string, Map<string, RoomPeerRecord>>();
 const socketToSession = new Map<string, string>();
+
+/**
+ * Tracks which device (by its persisted, locally-generated deviceName - there is no stronger
+ * per-device identity in this system) is recognized as a room's host, independent of the
+ * transient RoomPeerRecord entries that get wiped when both peers disconnect. This is what lets
+ * resolveRoleForFreshJoin give the host slot back to the same physical device on reconnect
+ * instead of whichever device's join-room request happens to reach the server first. Seeded at
+ * room-creation time from the creator's deviceName when the client supplies one (see
+ * createPairing), and kept up to date whenever a fresh join or a role swap changes who holds
+ * 'host'. Deliberately never pruned on room-empty, only overwritten - see resolveRoleForFreshJoin
+ * and swapRoomRoles for how staleness (the recognized host never comes back) is handled.
+ */
+const roomHostDeviceName = new Map<string, string>();
 
 function generateOtp(): string {
   const min = 10 ** (OTP_LENGTH - 1);
@@ -37,12 +56,15 @@ function pruneExpiredPairings(): void {
   }
 }
 
-export function createPairing(): PendingPairing {
+export function createPairing(creatorDeviceName?: string): PendingPairing {
   pruneExpiredPairings();
   const roomId = randomUUID();
   const otp = generateOtp();
   const pairing: PendingPairing = { roomId, otp, expiresAt: Date.now() + OTP_TTL_MS };
   pendingPairings.set(roomId, pairing);
+  if (creatorDeviceName) {
+    roomHostDeviceName.set(roomId, creatorDeviceName);
+  }
   console.log(formatLog(LogMessage.PairingCreated, { roomId }));
   return pairing;
 }
@@ -103,7 +125,7 @@ export function registerRoomJoin(
   roomId: string,
   socketId: string,
   sessionId: string,
-  role: string,
+  role: PeerRole,
   deviceName: string,
 ): void {
   const peersInRoom = roomPeersBySession.get(roomId) ?? new Map<string, RoomPeerRecord>();
@@ -174,4 +196,73 @@ export function getAllPeersInRoom(roomId: string): RoomPeerRecord[] {
     return [];
   }
   return Array.from(peersInRoom.values());
+}
+
+/**
+ * Assigns a role to a freshly-joining peer. `evaluateJoin` already guarantees at most one
+ * existing peer by the time this runs (a room_full rejection happens before a fresh join is ever
+ * registered), so there is at most one occupied slot to check.
+ *
+ * If the 'host' slot is already occupied by an existing peer, the joiner gets 'viewer' - this
+ * part is unchanged from the original free-slot rule.
+ *
+ * If the 'host' slot is free, this now checks roomHostDeviceName instead of granting it to
+ * whichever device asks first:
+ * - No host has been recorded for this room yet -> this joiner becomes host, and is recorded as
+ *   the room's recognized host. This is the normal first-join case (the pairing code generator's
+ *   own client, or a room created before deviceName-based tracking existed).
+ * - A host is recorded and this joiner's deviceName matches it -> reclaim, stays host. This is
+ *   the reconnect case the identity tracking exists for.
+ * - A host is recorded and this joiner's deviceName does NOT match it -> assigned 'viewer'
+ *   instead of taking the free slot. This is the fix for the race described when this function
+ *   was first written: previously, if both peers dropped and reconnected near-simultaneously,
+ *   whichever join-room request reached the server first won the host slot regardless of which
+ *   physical device it was. Now the slot is reserved for the recognized host to reclaim.
+ *
+ * Accepted tradeoff, deliberately not engineered around: if the recognized host's device never
+ * reconnects (uninstalled, deviceName storage cleared, permanently offline), the other device is
+ * stuck as 'viewer' with the 'host' slot reserved for a device that is never coming back - this
+ * would otherwise be a deadlock. `swapRoomRoles` (the server side of the manual "swap roles" UI
+ * action) is the intended way out: a lone peer can flip its own role, which also overwrites
+ * roomHostDeviceName, releasing the stale reservation.
+ */
+export function resolveRoleForFreshJoin(roomId: string, deviceName: string): PeerRole {
+  const occupiedRoles = new Set(getAllPeersInRoom(roomId).map((peer) => peer.role));
+  if (occupiedRoles.has('host')) {
+    return 'viewer';
+  }
+
+  const recognizedHost = roomHostDeviceName.get(roomId);
+  if (!recognizedHost || recognizedHost === deviceName) {
+    roomHostDeviceName.set(roomId, deviceName);
+    return 'host';
+  }
+  return 'viewer';
+}
+
+/**
+ * Flips role assignments within a room, the server side of the manual "swap roles" UI fallback.
+ * With two peers present, both roles swap. With only one peer present (its counterpart is
+ * offline or never reconnected), that lone peer's own role flips instead - this is what breaks
+ * the stale-reservation deadlock resolveRoleForFreshJoin's doc comment describes. Either way,
+ * roomHostDeviceName is updated to whichever deviceName now holds 'host' (or cleared if nobody
+ * does), so future joins are resolved against the swap's outcome, not the pre-swap assignment.
+ */
+export function swapRoomRoles(roomId: string): SwapOutcome {
+  const peersInRoom = getAllPeersInRoom(roomId);
+  if (peersInRoom.length === 0) {
+    return { succeeded: false, newHostDeviceName: null };
+  }
+
+  peersInRoom.forEach((peer) => {
+    peer.role = peer.role === 'host' ? 'viewer' : 'host';
+  });
+
+  const newHost = peersInRoom.find((peer) => peer.role === 'host') ?? null;
+  if (newHost) {
+    roomHostDeviceName.set(roomId, newHost.deviceName);
+  } else {
+    roomHostDeviceName.delete(roomId);
+  }
+  return { succeeded: true, newHostDeviceName: newHost?.deviceName ?? null };
 }

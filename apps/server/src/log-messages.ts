@@ -15,6 +15,10 @@ export enum LogMessage {
   RateLimitExceeded = 'rate_limit_exceeded',
   TurnRelayNotConfigured = 'turn_relay_not_configured',
   RelayFrameRejectedNotInRoom = 'relay_frame_rejected_not_in_room',
+  RoleSwapPayloadInvalid = 'role_swap_payload_invalid',
+  RoleSwapRejectedNotInRoom = 'role_swap_rejected_not_in_room',
+  RoleSwapRejectedEmptyRoom = 'role_swap_rejected_empty_room',
+  RoleSwapSucceeded = 'role_swap_succeeded',
 }
 
 const MESSAGES: Record<LogMessage, string> = {
@@ -34,6 +38,10 @@ const MESSAGES: Record<LogMessage, string> = {
   [LogMessage.RateLimitExceeded]: '[SIGNALING] Rate limit exceeded for {peerId} on {eventName}',
   [LogMessage.TurnRelayNotConfigured]: '[SIGNALING] /config/turn-credentials requested but no TURN relay is configured (missing TURN_STATIC_AUTH_SECRET env or config/system.yml network.turn), falling back to STUN-only ICE servers',
   [LogMessage.RelayFrameRejectedNotInRoom]: '[SIGNALING] Rejected relay-frame from peer {peerId} for room {roomId}: socket is not a member of that room',
+  [LogMessage.RoleSwapPayloadInvalid]: '[SIGNALING] Malformed swap-role payload from socket {peerId}, dropping request',
+  [LogMessage.RoleSwapRejectedNotInRoom]: '[SIGNALING] Rejected swap-role from peer {peerId} for room {roomId}: socket is not a member of that room',
+  [LogMessage.RoleSwapRejectedEmptyRoom]: '[SIGNALING] Rejected swap-role for room {roomId}: no peers present to swap',
+  [LogMessage.RoleSwapSucceeded]: '[SIGNALING] Swapped roles in room {roomId}, requested by peer {peerId}, new host device is {newHostDeviceName}',
 };
 
 export function formatLog(message: LogMessage, params: Record<string, string | number> = {}): string {

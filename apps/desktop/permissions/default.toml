@@ -84,6 +84,11 @@ description = "Allows re-syncing and restarting the managed cloudflared tunnel a
 commands.allow = ["restart_managed_tunnel"]
 
 [[permission]]
+identifier = "allow-stop-managed-tunnel"
+description = "Allows stopping the managed cloudflared tunnel on demand without uninstalling it."
+commands.allow = ["stop_managed_tunnel"]
+
+[[permission]]
 identifier = "allow-get-driver-status"
 description = "Allows reading whether the virtual camera DirectShow filter is currently registered in the Windows registry."
 commands.allow = ["get_driver_status"]
@@ -114,6 +119,7 @@ permissions = [
   "allow-get-tunnel-status",
   "allow-check-tunnel-update",
   "allow-restart-managed-tunnel",
+  "allow-stop-managed-tunnel",
   "allow-get-driver-status",
   "allow-get-core-status",
 ]

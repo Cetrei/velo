@@ -1,7 +1,7 @@
 import { readdirSync, statSync, copyFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
-const ANDROID_DIR = join('apps', 'web', 'android');
+const ANDROID_DIR = join('apps', 'android');
 const GRADLE_PROPS = join(ANDROID_DIR, 'gradle.properties');
 const VARIABLES_GRADLE = join(ANDROID_DIR, 'variables.gradle');
 

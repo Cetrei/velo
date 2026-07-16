@@ -88,8 +88,22 @@ interface CreatePairingResponse {
   expiresAt: number;
 }
 
-export async function createPairing(signalingUrl: string): Promise<CreatePairingResponse> {
-  const response = await fetch(`${signalingUrl}/pairing/create`, { method: 'POST' });
+/**
+ * creatorDeviceName is optional but should be passed whenever the caller has one available
+ * (see getDeviceName in lib/device-identity.ts). The signaling server records it as the room's
+ * recognized host, so that if this device disconnects and reconnects into the same room later,
+ * resolveRoleForFreshJoin can give the host slot back to it instead of a race with whichever
+ * device's join-room request happens to arrive first. Not required because callers other than
+ * the room creator (or callers not yet updated) should still get a working, if less robust,
+ * room - see apps/server/src/pairing.ts's resolveRoleForFreshJoin for the fallback behavior when
+ * no creator identity was recorded.
+ */
+export async function createPairing(signalingUrl: string, creatorDeviceName?: string): Promise<CreatePairingResponse> {
+  const response = await fetch(`${signalingUrl}/pairing/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceName: creatorDeviceName }),
+  });
   if (!response.ok) {
     throw new Error('[WEB] Failed to create pairing session with signaling server');
   }

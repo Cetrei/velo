@@ -1,4 +1,5 @@
 import type { ConnectionState, RemotePeerInfo, WebRtcStage } from '../hooks/useWebRTC';
+import type { PeerRole } from 'shared-types';
 import { getDeviceName } from '../lib/device-identity';
 
 const PEER_LABELS: Record<RemotePeerInfo['role'], string> = {
@@ -13,6 +14,8 @@ interface ConnectionStatusPanelProps {
   remotePeer: RemotePeerInfo | null;
   onDisconnect: () => void;
   driverReconnecting?: boolean;
+  negotiatedRole?: PeerRole | null;
+  onSwapRole?: () => void;
 }
 
 const STAGE_MESSAGES: Record<WebRtcStage, string> = {
@@ -26,6 +29,7 @@ const STAGE_MESSAGES: Record<WebRtcStage, string> = {
   peerLeft: 'The other device disconnected',
   socketError: 'Could not reach the signaling server',
   failed: 'Connection failed',
+  roleMismatch: 'This device cannot act as the role assigned to it',
 };
 
 function describeStatus(connectionState: ConnectionState, stage: WebRtcStage | undefined, remotePeer: RemotePeerInfo | null): string {
@@ -60,7 +64,21 @@ function DevicePairingRow({ remotePeer }: { remotePeer: RemotePeerInfo }) {
   );
 }
 
-export function ConnectionStatusPanel({ connectionState, stage, stageDetail, remotePeer, onDisconnect, driverReconnecting }: ConnectionStatusPanelProps) {
+function shouldShowSwapRole(onSwapRole: (() => void) | undefined, stage: WebRtcStage | undefined): boolean {
+  if (!onSwapRole) return false;
+  return stage === 'negotiating' || stage === 'connected' || stage === 'waitingForPeer';
+}
+
+export function ConnectionStatusPanel({
+  connectionState,
+  stage,
+  stageDetail,
+  remotePeer,
+  onDisconnect,
+  driverReconnecting,
+  negotiatedRole,
+  onSwapRole,
+}: ConnectionStatusPanelProps) {
   const isConnected = connectionState === 'connected' && remotePeer !== null;
   const isFailed = connectionState === 'failed';
 
@@ -71,6 +89,12 @@ export function ConnectionStatusPanel({ connectionState, stage, stageDetail, rem
           className={`h-2 w-2 rounded-full ${isConnected ? 'bg-velo-emerald' : isFailed ? 'bg-velo-coral' : 'bg-velo-indigo animate-pulse'}`}
         />
         <span className="text-sm text-velo-text-secondary">{describeStatus(connectionState, stage, remotePeer)}</span>
+        {negotiatedRole && <span className="rounded-md bg-velo-background px-2 py-0.5 text-xs text-velo-text-secondary">{PEER_LABELS[negotiatedRole]}</span>}
+        {shouldShowSwapRole(onSwapRole, stage) && (
+          <button onClick={onSwapRole} className="text-sm text-velo-indigo underline">
+            Swap roles
+          </button>
+        )}
         {isConnected && (
           <button onClick={onDisconnect} className="text-sm text-velo-coral underline">
             Disconnect

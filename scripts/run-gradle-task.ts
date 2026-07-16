@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ANDROID_DIR = join('apps', 'web', 'android');
+const ANDROID_DIR = join('apps', 'android');
 const GRADLEW_WINDOWS = 'gradlew.bat';
 const GRADLEW_UNIX = './gradlew';
 

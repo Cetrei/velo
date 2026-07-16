@@ -11,6 +11,7 @@ import { useLocalDevMode } from '../hooks/useLocalDevMode';
 import { useAndroidUpdater } from '../hooks/useAndroidUpdater';
 import { getSignalingUrl, type PairingFromUrl } from '../lib/pairing';
 import { resolveMobileSections, type NavSectionId } from '../lib/navigation';
+import { getLocalDeviceCapability, describeUnsupportedRole } from '../lib/role-capability';
 import { AppShell } from '../components/AppShell';
 import { PairingCodeEntry } from '../components/PairingCodeEntry';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
@@ -20,6 +21,7 @@ import { AboutPanel } from '../components/AboutPanel';
 import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 
 const FOREGROUND_SERVICE_NOTIFICATION_ID = 1;
+const HOST_VIEW_ROLE = 'host' as const;
 
 // TODO-ARCH: connection.mode (STUN/TURN/relay) is still read from device-local storage via
 // useLocalConnectionConfig instead of being handed to the phone by Desktop during pairing.
@@ -76,6 +78,17 @@ function useForegroundStreamingService(isStreaming: boolean): void {
   }, [isStreaming]);
 }
 
+function UnsupportedRolePanel({ onExit }: { onExit: () => void }) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-velo-background px-6 text-center text-velo-text-secondary">
+      <p className="max-w-sm">{describeUnsupportedRole(HOST_VIEW_ROLE)}</p>
+      <button onClick={onExit} className="text-sm text-velo-indigo underline">
+        Go back
+      </button>
+    </main>
+  );
+}
+
 export function StreamingView({
   pairing,
   connection,
@@ -88,12 +101,11 @@ export function StreamingView({
   const { stream, error } = useCameraStream();
   useWakeLock();
 
-  const { connectionState, stage, stageDetail, remotePeer, disconnect } = useWebRtc({
+  const { connectionState, stage, stageDetail, remotePeer, negotiatedRole, disconnect, swapRole } = useWebRtc({
     signalingUrl: getSignalingUrl(),
     roomId: pairing.roomId,
     otp: pairing.otp,
-    role: 'host',
-    isInitiator: true,
+    role: HOST_VIEW_ROLE,
     localStream: stream,
     readyToJoin: stream !== null,
     connectionMode: connection.mode,
@@ -120,6 +132,10 @@ export function StreamingView({
     onExit();
   }, [disconnect, onExit]);
 
+  if (stage === 'roleMismatch') {
+    return <UnsupportedRolePanel onExit={handleDisconnect} />;
+  }
+
   if (error) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-velo-background text-velo-coral">
@@ -145,6 +161,8 @@ export function StreamingView({
         stageDetail={stageDetail}
         remotePeer={remotePeer}
         onDisconnect={handleDisconnect}
+        negotiatedRole={negotiatedRole}
+        onSwapRole={swapRole}
       />
     </main>
   );
@@ -208,6 +226,10 @@ export function Host() {
         <p>Loading connection settings…</p>
       </main>
     );
+  }
+
+  if (!getLocalDeviceCapability().canCapture) {
+    return <UnsupportedRolePanel onExit={handleExit} />;
   }
 
   if (pairing) {

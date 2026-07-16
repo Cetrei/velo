@@ -7,7 +7,9 @@ import { useUpdater } from '../hooks/useUpdater';
 import { useServerUpdater } from '../hooks/useServerUpdater';
 import { useSignalingUrl } from '../hooks/useSignalingUrl';
 import { buildPairingUrl, createPairing } from '../lib/pairing';
+import { getDeviceName } from '../lib/device-identity';
 import { resolveDesktopSections, type NavSectionId } from '../lib/navigation';
+import { getLocalDeviceCapability, describeUnsupportedRole } from '../lib/role-capability';
 import { AppShell } from '../components/AppShell';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { UpdatesTab } from '../components/UpdatesTab';
@@ -15,6 +17,8 @@ import { ConsolePanel } from '../components/ConsolePanel';
 import { AboutPanel } from '../components/AboutPanel';
 import { UpdateNotificationBanner } from '../components/UpdateNotificationBanner';
 import { ConnectionStatusPanel } from '../components/ConnectionStatusPanel';
+
+const VIEWER_VIEW_ROLE = 'viewer' as const;
 
 interface PairingState {
   roomId: string;
@@ -29,7 +33,7 @@ function usePairingSession(signalingUrl: string) {
   const generate = useCallback(() => {
     setIsGenerating(true);
     setError(null);
-    createPairing(signalingUrl)
+    createPairing(signalingUrl, getDeviceName())
       .then((response) => {
         setPairing({ roomId: response.roomId, otp: response.otp });
       })
@@ -96,6 +100,14 @@ function PairingReadyPanel({
   );
 }
 
+function UnsupportedRolePanel() {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl bg-velo-surface p-8 text-center text-velo-text-secondary">
+      <p className="max-w-sm">{describeUnsupportedRole(VIEWER_VIEW_ROLE)}</p>
+    </div>
+  );
+}
+
 export function Viewer() {
   const signalingUrl = useSignalingUrl();
   const [activeSection, setActiveSection] = useState<NavSectionId>('connect');
@@ -109,6 +121,7 @@ export function Viewer() {
   const hasUpdateBadge = desktopUpdater.status === 'ready' || serverUpdater.status === 'ready';
   const isAppUpdateInstalling = desktopUpdater.status === 'installing';
   const sections = resolveDesktopSections(devModeEnabled);
+  const localCapability = getLocalDeviceCapability();
 
   const openUpdatesSection = useCallback(() => {
     setActiveSection('updates');
@@ -119,12 +132,11 @@ export function Viewer() {
     return buildPairingUrl(window.location.origin + '/host', pairing.roomId, pairing.otp);
   }, [pairing]);
 
-  const { connectionState, stage, stageDetail, remoteStream, remotePeer, disconnect } = useWebRtc({
+  const { connectionState, stage, stageDetail, remoteStream, remotePeer, negotiatedRole, disconnect, swapRole } = useWebRtc({
     signalingUrl,
     roomId: pairing?.roomId ?? '',
     otp: pairing?.otp ?? '',
-    role: 'viewer',
-    isInitiator: false,
+    role: VIEWER_VIEW_ROLE,
     connectionMode: config?.connection.mode,
     connectionConfig: config?.connection,
   });
@@ -151,6 +163,10 @@ export function Viewer() {
   }, [disconnect, clear]);
 
   function renderConnectSection() {
+    if (!localCapability.canReceive) {
+      return <UnsupportedRolePanel />;
+    }
+
     return (
       <>
         {error && <p className="text-sm text-velo-coral">{error}</p>}
@@ -168,7 +184,8 @@ export function Viewer() {
         {isConnected && (
           <video ref={videoRef} autoPlay playsInline className="w-full max-w-2xl rounded-2xl" />
         )}
-        {pairing && (
+        {pairing && stage === 'roleMismatch' && <UnsupportedRolePanel />}
+        {pairing && stage !== 'roleMismatch' && (
           <ConnectionStatusPanel
             connectionState={connectionState}
             stage={stage}
@@ -176,6 +193,8 @@ export function Viewer() {
             remotePeer={remotePeer}
             onDisconnect={handleDisconnect}
             driverReconnecting={deliveryState === 'reconnecting'}
+            negotiatedRole={negotiatedRole}
+            onSwapRole={swapRole}
           />
         )}
       </>

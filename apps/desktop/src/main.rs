@@ -4,6 +4,7 @@ mod config;
 mod core_loader;
 mod core_manager;
 mod driver_watchdog;
+mod frontend_loader;
 mod log_messages;
 mod manifest;
 mod module_manager;
@@ -89,15 +90,19 @@ fn focus_existing_window(app: &tauri::AppHandle) {
     let _ = window.set_focus();
 }
 
-fn build_pages_url() -> tauri::Url {
-    let raw_url = env!("VELO_PAGES_URL");
-    raw_url
-        .parse()
-        .unwrap_or_else(|_| panic!("{}", LogMessage::PagesUrlInvalid(raw_url.to_string()).text()))
-}
-
 fn create_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let window = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::External(build_pages_url()))
+    // Phase 6.1b: the frontend origin (remote, local cache, or embedded
+    // fallback) must be decided before the window exists, since Tauri v2
+    // exposes no reliable post-navigation failure event to react to
+    // afterward. resolve_startup_frontend is async (it verifies
+    // reachability over HTTP), so it is blocked on here rather than
+    // spawned - .setup() itself is a synchronous hook and the window
+    // cannot be created with a URL that has not been decided yet. The
+    // bounded retry budget inside resolve_startup_frontend keeps this
+    // block short even when the remote origin is unreachable.
+    let startup_frontend = tauri::async_runtime::block_on(frontend_loader::resolve_startup_frontend(app));
+
+    let window = tauri::WebviewWindowBuilder::new(app, "main", startup_frontend.into_webview_url())
         .title("Velo")
         .inner_size(1024.0, 720.0)
         .resizable(true)
